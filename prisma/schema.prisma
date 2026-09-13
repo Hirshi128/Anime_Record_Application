@@ -1,0 +1,116 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Anime {
+  id         Int         @id @default(autoincrement())
+  title      String
+  rating     Rating
+  review     String?
+  status     WatchStatus @default(WATCHING)
+  isFeatured Boolean      @default(false)
+  featuredAt DateTime?
+  userId     Int?
+  user       User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tags       AnimeTag[]
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+
+  @@index([userId])
+  @@index([userId, isFeatured])
+}
+
+model User {
+  id                     Int                  @id @default(autoincrement())
+  username               String               @unique
+  displayName            String
+  anime                  Anime[]
+  favoriteGenres         UserFavoriteGenre[]
+  sentFriendRequests     FriendRequest[]      @relation("SentFriendRequests")
+  receivedFriendRequests FriendRequest[]      @relation("ReceivedFriendRequests")
+  friendships            Friendship[]         @relation("UserFriendships")
+  friendOf               Friendship[]         @relation("UserFriends")
+  createdAt              DateTime             @default(now())
+  updatedAt              DateTime             @updatedAt
+}
+
+model UserFavoriteGenre {
+  userId Int
+  name   String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, name])
+}
+
+model FriendRequest {
+  id         Int                 @id @default(autoincrement())
+  senderId   Int
+  receiverId Int
+  status     FriendRequestStatus @default(PENDING)
+  createdAt  DateTime            @default(now())
+  updatedAt  DateTime            @updatedAt
+
+  sender   User @relation("SentFriendRequests", fields: [senderId], references: [id], onDelete: Cascade)
+  receiver User @relation("ReceivedFriendRequests", fields: [receiverId], references: [id], onDelete: Cascade)
+
+  @@unique([senderId, receiverId])
+  @@index([receiverId, status])
+  @@index([senderId, status])
+}
+
+model Friendship {
+  userId    Int
+  friendId  Int
+  createdAt DateTime @default(now())
+
+  user   User @relation("UserFriendships", fields: [userId], references: [id], onDelete: Cascade)
+  friend User @relation("UserFriends", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@id([userId, friendId])
+  @@index([friendId])
+}
+
+model Tag {
+  id    Int        @id @default(autoincrement())
+  name  String     @unique
+  anime AnimeTag[]
+}
+
+model AnimeTag {
+  animeId Int
+  tagId   Int
+
+  anime Anime @relation(fields: [animeId], references: [id], onDelete: Cascade)
+  tag   Tag   @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([animeId, tagId])
+}
+
+enum Rating {
+  SS
+  S
+  A
+  B
+  C
+  D
+}
+
+enum WatchStatus {
+  WATCHING
+  COMPLETED
+  PAUSED
+  DROPPED
+  PLAN_TO_WATCH
+}
+
+enum FriendRequestStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
