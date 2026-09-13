@@ -38,6 +38,7 @@ yarn-error.log*
 *.db-journal
 *.db-shm
 *.db-wal
+prisma/*export*.json
 
 # vercel
 .vercel

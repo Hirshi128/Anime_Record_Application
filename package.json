@@ -9,10 +9,16 @@
     "start:lan": "next start --hostname 0.0.0.0",
     "lint": "eslint",
     "db:init": "node scripts/init-db.mjs",
+    "db:migrate": "prisma migrate deploy",
+    "data:export-sqlite": "node scripts/export-sqlite-data.mjs",
+    "data:import-postgres": "node scripts/import-postgres-data.mjs",
+    "data:migrate-to-postgres": "npm run data:export-sqlite && npm run data:import-postgres",
     "prisma:generate": "prisma generate"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.1.0",
     "@prisma/adapter-better-sqlite3": "^7.9.0",
+    "@prisma/adapter-neon": "^7.10.0",
     "@prisma/client": "^7.9.0",
     "better-sqlite3": "^13.0.1",
     "dotenv": "^17.4.2",
