@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-    "build": "next build",
+    "build": "npm run prisma:generate && next build",
     "start": "next start",
     "start:lan": "next start --hostname 0.0.0.0",
     "lint": "eslint",
@@ -13,7 +13,8 @@
     "data:export-sqlite": "node scripts/export-sqlite-data.mjs",
     "data:import-postgres": "node scripts/import-postgres-data.mjs",
     "data:migrate-to-postgres": "npm run data:export-sqlite && npm run data:import-postgres",
-    "prisma:generate": "prisma generate"
+    "prisma:generate": "prisma generate",
+    "postinstall": "prisma generate"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.1.0",
