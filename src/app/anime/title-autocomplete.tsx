@@ -1,18 +1,21 @@
 "use client";
 
 import { useEffect, useId, useRef, useState } from "react";
+import { normalizedTitle } from "@/lib/personal-library";
 
 type TitleSuggestion = { id: number; title: string; subtitle: string };
 type TitleAutocompleteProps = {
   initialTitle?: string;
   value?: string;
   onChange?: (value: string) => void;
+  recordedTitles?: string[];
 };
 
 export function TitleAutocomplete({
   initialTitle = "",
   value,
   onChange,
+  recordedTitles = [],
 }: TitleAutocompleteProps) {
   const listboxId = useId();
   const [localTitle, setLocalTitle] = useState(initialTitle);
@@ -196,6 +199,7 @@ export function TitleAutocomplete({
                   {suggestion.subtitle}
                 </span>
               ) : null}
+              {recordedTitles.some(title => normalizedTitle(title) === normalizedTitle(suggestion.title)) ? <span className="mt-1 block text-xs font-semibold text-teal-700">記録済み</span> : null}
             </button>
           ))}
         </div>

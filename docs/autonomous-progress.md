@@ -797,3 +797,60 @@ For each meaningful run, append a dated entry with:
 - The user explicitly approved pushing this change and updating the public site.
   No production database access, migrations, or data transfer are part of release.
   Remaining: browser-data deletion loses records, and devices/browsers do not sync.
+
+### 2026-10-20 - Personal Journal Improvement Session (Verified Release)
+
+- User requested a one-hour implementation/verification loop for the proposed
+  personal-journal improvements. Baseline was clean at a918099. No permission for
+  a new push/deployment was inferred from the earlier, completed release request.
+- Implemented tap-open tier placement, grade/position and left/right commands in
+  a separate dialog, drag overlay/insertion markers, horizontal auto-scroll and
+  Japanese drag announcements. Cards retain 140px/56px size and watched dates;
+  SS/S styling is unchanged. Keyboard vertical movement targets adjacent grades.
+- Added independent custom rating guides with stale-tab protection, yearly/monthly
+  summaries, grade distribution, favorite genre counts, and PNG tier images with
+  bounded bitmap size and canvas pixel checks. Existing candidate year/format
+  metadata is retained, with registered-title indicators and duplicate warnings.
+- Added bounded rewatch snapshots (month, rating, comment, status, tags). v1 data
+  remains readable without writes on load; saves use v2 at the same storage key so
+  old clients stop instead of discarding histories. Current and history IDs cannot
+  collide. Rewatch dates cannot precede the last viewing. Historical period tiers
+  are read-only; exact historical within-grade positions are not snapshotted.
+- Added save/error/pending states, dirty-form cancellation checks, conflict-safe
+  deletion undo, draft correction and direct record editing from tier cards,
+  normalized multiword search, and 24-item incremental list rendering.
+- Added offline public-shell/static-asset caching and cache warm-up. APIs, RSC,
+  legacy/auth pages, external assets and hydrated user records are excluded.
+  Cache count is bounded; cache failures must not break live network responses.
+  Added offline status and a route back to cached records from the fallback page.
+- Intermediate checks passed 277 unit tests, lint and TypeScript/build. Browser
+  iterations detected an over-event insertion-marker lag, keyboard own-row
+  selection, rapid key-event timing, and a compact-width drag scroll-compensation
+  jump. Corrected the first issues and tuned scroll compensation/speed; final
+  verification and visual inspection remain in progress below.
+- Files: src/app/personal-library.tsx, tier-board.tsx, personal-review.tsx,
+  pwa-register.tsx, anime/title-autocomplete.tsx, globals.css;
+  src/lib/personal-library.ts, personal-insights.ts, tier-image.ts;
+  public/sw.js, offline.html; tests/personal-library.test.ts,
+  personal-insights.test.ts, personal-service-worker.test.ts, tier-board.test.tsx,
+  tests/browser/personal.spec.ts; README.md and the autonomous docs.
+- No production DB reads/writes, migrations, data transfer, paid services or
+  dependency changes were performed. Remaining product limits:
+  no device sync or recovery after clearing browser data; no per-history correction;
+  real Android/TalkBack acceptance and very large tier virtualization need follow-up.
+- Final npm.cmd run verify passed 280 unit tests in 36 files, lint without warnings,
+  TypeScript/production build, and 50 browser cases. One desktop-only held-touch
+  case is intentionally skipped; actual touch events pass in both mobile projects.
+  Checks include 100 deterministic tier moves, insert markers and auto-scroll,
+  keyboard and touch movement, v1-to-v2 preservation, quota-failure non-overwrite,
+  stale-tab protection, yearly historical grades, PNG dimensions/gold pixels,
+  offline reload/edit/persistence, long text and 24-item incremental lists.
+- Inspected desktop and compact-mobile review, library, tier and dialog screenshots
+  and the generated PNG. Earlier scripted scroll/keyboard timing was corrected by
+  following the actual highlighted target; CRUD also passed two runs per viewport.
+  Unchanged placement saves now preserve the current rank instead of appending.
+- The user redirected the session to publish when current verification finishes,
+  then stop. This explicitly authorizes the tested GitHub/Vercel release; no new
+  improvements are to be started after verification. Deployment outcome is checked
+  separately on the connected anime-record-application-oh6d project and reported
+  in the chat. This authorization does not permit later unattended releases.

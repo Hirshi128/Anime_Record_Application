@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { readFile } from "node:fs/promises";
 
 async function dragToGrade(page: Page, title: string, grade: string) {
   const source = page.getByRole("button", { name: `${title}を移動`, exact: true });
@@ -8,10 +9,13 @@ async function dragToGrade(page: Page, title: string, grade: string) {
   await page.mouse.move(start.x + 20, start.y + 20);
   await page.mouse.down();
   await page.mouse.move(start.x + 30, start.y + 30, { steps: 5 });
-  await target.evaluate(element => element.scrollIntoView({ block: "center", inline: "center" }));
-  const end = (await target.boundingBox())!;
-  await page.mouse.move(end.x + end.width - 8, end.y + end.height / 2, { steps: 12 });
-  await page.waitForTimeout(50);
+  await expect(page.locator(".tier-drag-preview")).toBeVisible();
+  await expect(async () => {
+    await target.evaluate(element => element.scrollIntoView({ block: "center", inline: "center" }));
+    const end = (await target.boundingBox())!;
+    await page.mouse.move(end.x + Math.min(70, end.width / 2), end.y + end.height / 2, { steps: 6 });
+    await expect(target).toHaveClass(/tier-over/, { timeout: 300 });
+  }).toPass({ timeout: 5000 });
   await page.mouse.up();
   await page.waitForTimeout(100);
   await expect(page.getByRole("region", { name: `${grade}ティア`, exact: true }).getByRole("heading", { name: title, exact: true })).toBeVisible();
@@ -46,7 +50,7 @@ test("personal record CRUD and persistence without login or manual file operatio
   await expect(page.getByText("自分だけの感想")).toBeVisible();
   await page.getByRole("button", { name: "テスト作品を編集" }).click();
   await dialog.getByLabel("見た年月").fill("2025-07");
-  await dialog.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await dialog.getByRole("button", { name: "変更を保存", exact: true }).click();
   await dragToGrade(page, "テスト作品", "SS");
   await page.getByRole("button", { name: "一覧", exact: true }).click();
   await page.getByLabel("評価で絞り込み").selectOption("E");
@@ -66,6 +70,344 @@ test("personal record CRUD and persistence without login or manual file operatio
   await page.reload();
   await expect(page.getByRole("heading", { name: "テスト作品" })).toHaveCount(0);
   expect(posts).toEqual([]);
+});
+
+test("places works without dragging and persists a personal rating guide", async ({ page }, info) => {
+  const records = ["う", "え", "お"].map((title, i) => ({ id: `tap-${i}`, title, rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2026-01-01T00:00:00.000Z" }));
+  await page.addInitScript(records => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })); }, records);
+  await page.goto("/");
+  await page.getByRole("button", { name: "えを移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "左へ移動" }).click();
+  const tier = page.getByRole("region", { name: "Sティア", exact: true });
+  await expect(tier.getByRole("heading", { level: 3 })).toHaveText(["え", "う", "お"]);
+  await page.reload();
+  await expect(tier.getByRole("heading", { level: 3 })).toHaveText(["え", "う", "お"]);
+  await page.getByText("評価基準", { exact: true }).click();
+  await page.getByRole("button", { name: "評価基準を編集", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("SSの基準", { exact: true }).fill("何度でも見たい人生の一本");
+  await page.getByRole("dialog").getByRole("button", { name: "評価基準を保存", exact: true }).click();
+  await page.reload();
+  await expect(page.getByRole("region", { name: "SSティア", exact: true }).getByRole("heading", { name: "SS", exact: true })).toHaveAttribute("title", "何度でも見たい人生の一本");
+  await page.screenshot({ path: info.outputPath("tier-tap-placement.png"), fullPage: true });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("preserves rewatch history, historical grades and yearly insights and saves a tier image", async ({ page }, info) => {
+  const record = { id: "rewatch", title: "再視聴作品", rating: "S", status: "COMPLETED", watchedMonth: "2024-06", review: "初回の感想", tags: ["SF"], updatedAt: "2024-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "一覧", exact: true }).click();
+  await page.getByRole("button", { name: "再視聴作品の再視聴を記録", exact: true }).click();
+  let dialog = page.getByRole("dialog");
+  await dialog.getByLabel("見た年月").fill("2025-07");
+  await dialog.getByLabel("感想").fill("再視聴してもっと好きになった");
+  await dialog.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await expect(page.locator(".tier-item")).toHaveCount(1);
+  await expect(page.getByText("評価待ち・まだ保存されていません", { exact: true })).toBeVisible();
+  await page.getByRole("region", { name: "評価待ち", exact: true }).getByRole("button", { name: "再視聴作品を移動", exact: true }).click();
+  dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "評価", exact: true }).selectOption("SS");
+  await dialog.getByRole("button", { name: "配置を保存", exact: true }).click();
+  await expect(page.getByText("このブラウザに保存済み", { exact: true })).toBeVisible();
+  await page.reload();
+  await page.getByRole("combobox", { name: "年", exact: true }).selectOption("2024");
+  await expect(page.getByRole("region", { name: "Sティア", exact: true }).getByRole("heading", { name: "再視聴作品", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "再視聴作品を移動", exact: true })).toHaveCount(0);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records[0]);
+  expect(saved.rating).toBe("SS"); expect(saved.history[0].rating).toBe("S"); expect(saved.history[0].review).toBe("初回の感想");
+  await page.getByRole("button", { name: "振り返り", exact: true }).click();
+  await expect(page.getByRole("region", { name: "ベスト作品", exact: true })).toContainText("S");
+  await page.getByRole("combobox", { name: "年", exact: true }).selectOption("2025");
+  await expect(page.getByRole("heading", { name: "2025年の振り返り", exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "ジャンル別の好み", exact: true })).toContainText("SF");
+  await page.screenshot({ path: info.outputPath("year-review.png"), fullPage: true });
+  await page.getByRole("button", { name: "2025年7月 1件", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "2025年07月の振り返り", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "ティア表", exact: true }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "ティア表を画像保存", exact: true }).click();
+  const file = await download;
+  await file.saveAs(info.outputPath("tier-image.png"));
+  const png = await readFile((await file.path())!);
+  expect(png.subarray(0, 8).toString("hex")).toBe("89504e470d0a1a0a");
+  expect(png.readUInt32BE(16)).toBe(1000);
+  expect(png.length).toBeGreaterThan(1000);
+  const pixel = await page.evaluate(async base64 => {
+    const image = new Image(); image.src = `data:image/png;base64,${base64}`; await image.decode();
+    const canvas = document.createElement("canvas"); canvas.width = image.width; canvas.height = image.height;
+    const ctx = canvas.getContext("2d")!; ctx.drawImage(image, 0, 0);
+    return [...ctx.getImageData(105, 95, 1, 1).data];
+  }, png.toString("base64"));
+  expect(pixel).toEqual([201, 155, 56, 255]);
+  await page.getByRole("button", { name: "一覧", exact: true }).click();
+  await page.getByText("過去の視聴履歴（1回）", { exact: true }).click();
+  await expect(page.getByText("初回の感想", { exact: true })).toBeVisible();
+  await expect(page.getByText("再視聴してもっと好きになった", { exact: true })).toBeVisible();
+});
+
+test("warns on duplicate titles and can start a rewatch without adding a duplicate work", async ({ page }) => {
+  const record = { id: "existing", title: "登録済み作品", rating: "A", status: "COMPLETED", watchedMonth: "2024-06", review: "消さない", tags: [], updatedAt: "2024-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [{ id: 1, title: "登録済み作品", subtitle: "2013 / TV" }] } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("combobox", { name: "タイトル", exact: true }).fill("登録済み");
+  await dialog.getByRole("option", { name: /登録済み作品/ }).click();
+  await expect(dialog.getByText("同じタイトルの記録があります。", { exact: true })).toBeVisible();
+  await dialog.getByLabel("見た年月").fill("2025-01");
+  await expect(dialog.getByRole("button", { name: "ティア表で評価", exact: true })).toBeDisabled();
+  await dialog.getByRole("button", { name: "2024-06の記録に再視聴を追加", exact: true }).click();
+  await expect(dialog.getByRole("heading", { name: "再視聴を記録", exact: true })).toBeVisible();
+  await dialog.getByLabel("見た年月").fill("2025-01");
+  await dialog.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await page.getByRole("button", { name: "登録をキャンセル", exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records)).toEqual([record]);
+});
+
+test("undoes deletion safely and confirms abandoning unsaved form changes", async ({ page }) => {
+  const record = { id: "undo", title: "消さない作品", rating: "A", status: "COMPLETED", watchedMonth: "2025-06", review: "大切な感想", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "一覧", exact: true }).click();
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "消さない作品を削除", exact: true }).click();
+  await expect(page.getByText("まだ記録がありません。", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "削除を元に戻す", exact: true }).click();
+  await expect(page.getByText("大切な感想", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "消さない作品を編集", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("感想").fill("まだ保存しない変更");
+  page.once("dialog", d => d.dismiss());
+  await dialog.getByRole("button", { name: "キャンセル", exact: true }).click();
+  await expect(dialog).toBeVisible();
+  page.once("dialog", d => d.accept());
+  await dialog.getByRole("button", { name: "キャンセル", exact: true }).click();
+  await expect(dialog).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records)).toEqual([record]);
+});
+
+test("opens and edits the personal app after an offline restart without caching APIs", async ({ page, context }) => {
+  const record = { id: "offline", title: "オフライン作品", rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.goto("/");
+  await page.getByRole("button", { name: "オフライン作品を移動", exact: true }).waitFor();
+  await page.evaluate(async () => {
+    const registration = await navigator.serviceWorker.ready;
+    const channel = new MessageChannel();
+    const ready = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("Offline cache warm-up timed out")), 15000);
+      channel.port1.onmessage = e => { clearTimeout(timer); if (e.data.ready) resolve(); else reject(new Error("Assets not cached")); };
+    });
+    registration.active!.postMessage({ type: "CACHE_PERSONAL_ASSETS", urls: performance.getEntriesByType("resource").map(r => r.name) }, [channel.port2]);
+    await ready;
+  });
+  await context.setOffline(true);
+  await page.reload();
+  await expect(page.getByText("オフライン", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "オフライン作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("combobox", { name: "評価", exact: true }).selectOption("SS");
+  await page.getByRole("dialog").getByRole("button", { name: "配置を保存", exact: true }).click();
+  await page.goto("/library");
+  await expect(page.getByRole("region", { name: "SSティア", exact: true }).getByRole("heading", { name: "オフライン作品", exact: true })).toBeVisible();
+  const keys = await page.evaluate(async () => (await Promise.all((await caches.keys()).map(async name => (await (await caches.open(name)).keys()).map(r => new URL(r.url).pathname)))).flat());
+  expect(keys).toContain("/"); expect(keys).toContain("/library");
+  expect(keys.some(k => k.startsWith("/_next/static/"))).toBe(true);
+  expect(keys.some(k => k.startsWith("/api/") || k.startsWith("/users") || k.startsWith("/anime/"))).toBe(false);
+  await context.setOffline(false);
+});
+
+test("protects rating-guide edits and delete undo from newer changes in another tab", async ({ page, context }) => {
+  const record = { id: "tabs", title: "同時編集作品", rating: "A", status: "COMPLETED", watchedMonth: "2025-06", review: "最初", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.goto("/");
+  await page.getByText("評価基準", { exact: true }).click();
+  await page.getByRole("button", { name: "評価基準を編集", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("SSの基準", { exact: true }).fill("古いタブの変更");
+  const other = await context.newPage(); await other.goto("/");
+  await other.getByText("評価基準", { exact: true }).click();
+  await other.getByRole("button", { name: "評価基準を編集", exact: true }).click();
+  await other.getByRole("dialog").getByLabel("SSの基準", { exact: true }).fill("新しいタブの変更");
+  await other.getByRole("button", { name: "評価基準を保存", exact: true }).click();
+  await expect(page.getByRole("region", { name: "SSティア", exact: true }).getByRole("heading", { name: "SS", exact: true })).toHaveAttribute("title", "新しいタブの変更");
+  await page.getByRole("dialog").getByRole("button", { name: "評価基準を保存", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.rating-guide.v1")!).descriptions.SS)).toBe("新しいタブの変更");
+  await page.getByRole("dialog").getByRole("button", { name: "閉じる", exact: true }).click();
+  await page.getByRole("button", { name: "一覧", exact: true }).click();
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "同時編集作品を削除", exact: true }).click();
+  await other.evaluate(record => localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [{ ...record, review: "他のタブの最新記録" }] })), record);
+  await expect(page.getByText("他のタブの最新記録", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "削除を元に戻す", exact: true }).click();
+  await expect(page.getByText("保存できていません", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records[0].review)).toBe("他のタブの最新記録");
+  await other.close();
+});
+
+test("shows insertion markers and scrolls long tiers while dragging", async ({ page }) => {
+  const records = Array.from({ length: 20 }, (_, i) => ({ id: `scroll-${i}`, title: `作品${i}`, rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" }));
+  await page.addInitScript(records => localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })), records);
+  await page.goto("/");
+  const row = page.getByRole("region", { name: "Sティア", exact: true }).locator(".tier-content");
+  const source = page.getByRole("button", { name: "作品0を移動", exact: true });
+  await source.scrollIntoViewIfNeeded(); const start = (await source.boundingBox())!;
+  await page.mouse.move(start.x + 20, start.y + 20); await page.mouse.down();
+  await page.mouse.move(start.x + 30, start.y + 25, { steps: 3 });
+  const next = (await page.getByRole("button", { name: "作品1を移動", exact: true }).boundingBox())!;
+  await page.mouse.move(next.x + 3, next.y + 10, { steps: 5 });
+  await expect(page.locator("[data-drop-side]")).toHaveCount(1);
+  const box = (await row.boundingBox())!;
+  await page.mouse.move(box.x + box.width - 4, box.y + 25, { steps: 8 });
+  await expect.poll(() => row.evaluate(element => element.scrollLeft)).toBeGreaterThan(0);
+  await page.keyboard.press("Escape"); await page.mouse.up();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records.map((r: {id: string}) => r.id))).toEqual(records.map(r => r.id));
+});
+
+test("places a pending work using a held touch gesture", async ({ page, context }, info) => {
+  test.skip(info.project.name === "desktop", "Touch sensor is tested in mobile projects");
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
+  await page.getByRole("dialog").getByRole("combobox", { name: "タイトル", exact: true }).fill("タッチ操作作品");
+  await page.getByRole("dialog").getByLabel("見た年月").fill("2025-06");
+  await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  const source = page.getByRole("button", { name: "タッチ操作作品を移動", exact: true });
+  await source.scrollIntoViewIfNeeded(); const start = (await source.boundingBox())!;
+  const session = await context.newCDPSession(page);
+  await session.send("Input.dispatchTouchEvent", { type: "touchStart", touchPoints: [{ x: start.x + 30, y: start.y + 25 }] });
+  await page.waitForTimeout(220);
+  await expect(page.locator(".tier-drag-preview")).toBeVisible();
+  const target = page.getByRole("region", { name: "SSティア", exact: true }).locator(".tier-content");
+  await target.scrollIntoViewIfNeeded(); const end = (await target.boundingBox())!;
+  await session.send("Input.dispatchTouchEvent", { type: "touchMove", touchPoints: [{ x: end.x + 20, y: end.y + 20 }] });
+  await page.waitForTimeout(100);
+  await session.send("Input.dispatchTouchEvent", { type: "touchEnd", touchPoints: [] });
+  await expect(page.getByRole("region", { name: "評価待ち", exact: true })).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records[0].rating)).toBe("SS");
+  await session.detach();
+});
+
+test("supports keyboard tier movement and cancels drops outside the board", async ({ page }) => {
+  const records = [{ id: "keyboard", title: "キーボード作品", rating: "A", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" }];
+  await page.addInitScript(records => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })); }, records);
+  await page.goto("/");
+  const item = page.getByRole("button", { name: "キーボード作品を移動", exact: true });
+  await item.focus(); await page.keyboard.press("Space");
+  await expect(page.locator(".tier-drag-preview")).toBeVisible();
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("region", { name: "Sティア", exact: true }).locator(".tier-content")).toHaveClass(/tier-over/);
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("region", { name: "Sティア", exact: true }).getByRole("heading", { name: "キーボード作品", exact: true })).toBeVisible();
+  const saved = await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"));
+  await item.scrollIntoViewIfNeeded(); const box = (await item.boundingBox())!;
+  await page.mouse.move(box.x + 20, box.y + 20); await page.mouse.down(); await page.mouse.move(box.x + 30, box.y + 30, { steps: 3 });
+  await page.mouse.move(4, 4, { steps: 10 }); await page.mouse.up();
+  expect(await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"))).toBe(saved);
+});
+
+test("keeps current viewing chronology and rejects a rewatch before the previous month", async ({ page }) => {
+  const record = { id: "chronology", title: "年月を確認する作品", rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "元の感想", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })); }, record);
+  await page.goto("/");
+  await page.getByRole("button", { name: "年月を確認する作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "再視聴を記録", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByLabel("見た年月").fill("2024-01");
+  await expect(dialog.getByRole("alert")).toContainText("2025-06");
+  await expect(dialog.getByRole("button", { name: "ティア表で評価", exact: true })).toBeDisabled();
+  await dialog.getByLabel("見た年月").fill("2025-06");
+  await expect(dialog.getByRole("button", { name: "ティア表で評価", exact: true })).toBeEnabled();
+  page.once("dialog", d => d.accept());
+  await dialog.getByRole("button", { name: "キャンセル", exact: true }).click();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records)).toEqual([record]);
+});
+
+test("keeps long titles and comments within mobile cards, dialogs and summaries", async ({ page }, info) => {
+  const title = "A".repeat(200);
+  const record = { id: "long", title, rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "長い感想".repeat(400), tags: ["SF"], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] })), record);
+  await page.goto("/");
+  const card = page.locator(".tier-item");
+  expect((await card.boundingBox())!.width).toBeLessThanOrEqual(140);
+  expect((await card.boundingBox())!.height).toBeLessThanOrEqual(60);
+  await card.getByRole("button").click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByText("記録の詳細", { exact: true }).click();
+  expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth)).toBe(true);
+  await page.screenshot({ path: info.outputPath("long-title-dialog.png") });
+  await dialog.getByRole("button", { name: "閉じる", exact: true }).click();
+  await page.getByRole("button", { name: "振り返り", exact: true }).click();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await page.getByRole("region", { name: "ベスト作品", exact: true }).getByRole("button", { name: `${title}の記録を見る`, exact: true }).click();
+  await expect(page.getByRole("article")).toHaveCount(1);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});
+
+test("edits pending input and opens metadata editing directly from a tier card", async ({ page }) => {
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.goto("/");
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
+  await page.getByRole("dialog").getByRole("combobox", { name: "タイトル", exact: true }).fill("修正する作品");
+  await page.getByRole("dialog").getByLabel("見た年月").fill("2025-06");
+  await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await page.getByRole("button", { name: "修正する作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "入力内容を修正", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("感想").fill("配置前に直した感想");
+  await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  expect(await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"))).toBeNull();
+  await page.getByRole("button", { name: "修正する作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("combobox", { name: "評価", exact: true }).selectOption("S");
+  await page.getByRole("dialog").getByRole("button", { name: "配置を保存", exact: true }).click();
+  await page.getByRole("button", { name: "修正する作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByText("記録の詳細", { exact: true }).click();
+  await expect(page.getByRole("dialog").getByText("配置前に直した感想", { exact: true })).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "記録を編集", exact: true }).click();
+  await page.getByRole("dialog").getByLabel("感想").fill("ティアから直接編集");
+  await page.getByRole("dialog").getByRole("button", { name: "変更を保存", exact: true }).click();
+  const record = await page.evaluate(() => JSON.parse(localStorage.getItem("anime-record.personal.v1")!).records[0]);
+  expect(record.review).toBe("ティアから直接編集"); expect(record.rating).toBe("S");
+});
+
+test("loads a large list incrementally and searches normalized words", async ({ page }) => {
+  const records = Array.from({ length: 55 }, (_, i) => ({ id: `many-${i}`, title: `作品${i}`, rating: "A", status: "COMPLETED", watchedMonth: "2025-06", review: i === 54 ? "ＳＦ 心に残る" : "", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" }));
+  await page.addInitScript(records => localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })), records);
+  await page.goto("/"); await page.getByRole("button", { name: "一覧", exact: true }).click();
+  const articles = page.getByRole("article");
+  await expect(articles).toHaveCount(24);
+  await page.getByRole("button", { name: "さらに表示", exact: true }).click();
+  await expect(articles).toHaveCount(48);
+  await page.getByRole("button", { name: "さらに表示", exact: true }).click();
+  await expect(articles).toHaveCount(55);
+  await expect(page.getByRole("button", { name: "さらに表示", exact: true })).toHaveCount(0);
+  await page.getByRole("textbox", { name: "検索", exact: true }).fill("sf 心に 作品54");
+  await expect(articles).toHaveCount(1);
+  await expect(articles.first()).toContainText("作品54");
+});
+
+test("retains original records and the pending work when browser storage refuses a save", async ({ page }) => {
+  const record = { id: "quota", title: "保護する作品", rating: "A", status: "COMPLETED", watchedMonth: "2025-06", review: "残す感想", tags: [], updatedAt: "2025-06-30T00:00:00.000Z" };
+  await page.addInitScript(record => {
+    localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records: [record] }));
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) { if (key === "anime-record.personal.v1") throw new DOMException("Quota exceeded", "QuotaExceededError"); return setItem.call(this, key, value); };
+  }, record);
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.goto("/");
+  const original = await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"));
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
+  await page.getByRole("dialog").getByRole("combobox", { name: "タイトル", exact: true }).fill("まだ保存できない作品");
+  await page.getByRole("dialog").getByLabel("見た年月").fill("2025-07");
+  await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await page.getByRole("button", { name: "まだ保存できない作品を移動", exact: true }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "配置を保存", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("alert")).toContainText("保存できませんでした");
+  expect(await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"))).toBe(original);
+  await page.getByRole("dialog").getByRole("button", { name: "閉じる", exact: true }).click();
+  await expect(page.getByText("保存できていません", { exact: true })).toBeVisible();
+  await expect(page.getByRole("region", { name: "評価待ち", exact: true })).toBeVisible();
 });
 
 test("keeps corrupt browser data untouched and prevents accidental overwrite", async ({ page }) => {
@@ -119,7 +461,7 @@ test("inserts a new work into the middle of a tier and reviews a selected year",
   await page.getByRole("button", { name: "一覧", exact: true }).click();
   await page.getByRole("button", { name: "えを編集", exact: true }).click();
   await page.getByRole("dialog").getByLabel("感想").fill("順序を変えずにコメントを更新");
-  await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await page.getByRole("button", { name: "変更を保存", exact: true }).click();
   await page.getByRole("combobox", { name: "年", exact: true }).selectOption("2025");
   await expect(tier.getByRole("heading", { level: 3 })).toHaveText(["う", "え", "か", "お"]);
   await page.screenshot({ path: info.outputPath("tier-board.png"), fullPage: true });

@@ -30,7 +30,7 @@ it("has exactly seven ordered grades and roundtrips each without numeric convers
   for (const rating of personalRatings) expect(decodeLibrary(encodeLibrary([{ ...record, rating }]))[0].rating).toBe(rating);
   expect(decodeLibrary(null)).toEqual([]);
 });
-it.each(["{", "null", '{"version":2,"records":[]}', '{"version":1,"records":{}}'])("rejects malformed or unsupported backups: %s", raw => {
+it.each(["{", "null", '{"version":3,"records":[]}', '{"version":1,"records":{}}'])("rejects malformed or unsupported backups: %s", raw => {
   expect(() => decodeLibrary(raw)).toThrow();
 });
 it.each([{ rating: 10 }, { rating: "10" }, { rating: "F" }, { title: " " }, { title: "x".repeat(201) }, { review: 1 }, { tags: [null] }, { updatedAt: "bad" }, { id: "<script>" }])("rejects invalid records without rewriting data", values => {
@@ -51,4 +51,21 @@ it("writes only the personal storage key and propagates quota failures", () => {
   expect(storage.setItem).toHaveBeenCalledWith(libraryKey, encodeLibrary([record]));
   storage.setItem.mockImplementation(() => { throw new Error("quota"); });
   expect(() => saveLibrary(null, [record], storage)).toThrow("quota");
+});
+
+it("preserves every other work and its history across a deterministic series of tier moves", () => {
+  let seed = 12345;
+  const random = (max: number) => { seed = (seed * 1664525 + 1013904223) >>> 0; return seed % max; };
+  let records: PersonalRecord[] = Array.from({ length: 20 }, (_, i) => ({ ...record, id: `work-${i}`, title: `作品${i}`, rating: personalRatings[i % personalRatings.length], history: [{ id: `past-${i}`, rating: "S", status: "COMPLETED", review: "前回の感想", tags: [], updatedAt: record.updatedAt, watchedMonth: "2024-01" }] }));
+  for (let i = 0; i < 100; i++) {
+    const moved = records[random(records.length)];
+    const rating = personalRatings[random(personalRatings.length)];
+    const peers = records.filter(r => r.id !== moved.id && r.rating === rating);
+    const target = peers.length ? peers[random(peers.length)].id : undefined;
+    const next = placeInTier(records, moved, rating, target, Boolean(random(2)));
+    expect(new Set(next.map(r => r.id)).size).toBe(20);
+    expect(next.filter(r => r.id !== moved.id)).toEqual(records.filter(r => r.id !== moved.id));
+    expect(next.find(r => r.id === moved.id)).toEqual({ ...moved, rating });
+    records = decodeLibrary(encodeLibrary(next));
+  }
 });

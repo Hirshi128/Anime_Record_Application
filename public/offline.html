@@ -41,7 +41,8 @@
         line-height: 1.8;
         color: #52525b;
       }
-      button {
+      button, a {
+        display: inline-flex;
         margin-top: 16px;
         min-height: 44px;
         border: 1px solid #171717;
@@ -52,8 +53,9 @@
         font-size: 16px;
         font-weight: 700;
         cursor: pointer;
+        text-decoration: none;
       }
-      button:focus-visible {
+      button:focus-visible, a:focus-visible {
         outline: 3px solid #0369a1;
         outline-offset: 3px;
       }
@@ -68,6 +70,7 @@
         インターネットに接続できません。Wi-Fiやモバイル通信を確認してください。
       </p>
       <button type="button" id="retry">再試行</button>
+      <a href="/">記録を開く</a>
     </main>
     <script>
       document

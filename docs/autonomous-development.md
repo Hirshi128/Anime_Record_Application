@@ -11,8 +11,9 @@ Use npm.cmd run verify: it runs all unit tests, lint, build, and the new persona
 browser suite. Old auth/server modules and tests are retained only as legacy
 reference. All production Neon data must remain untouched. The auth rollout and
 social priorities below are historical, not instructions to deploy or extend them.
-Local records are per browser and origin, not cloud-synced. Do not imply complete
-offline startup support until the app shell has been implemented and tested.
+Local records are per browser and origin, not cloud-synced. The personal shell and
+immutable static assets now support offline restarts after an online warm-up on
+HTTPS/localhost. Never cache API, RSC, legacy/auth pages or hydrated user content.
 
 Latest user preference: remove the home subtitle, label the primary add command
 as 視聴したアニメを追加, and remove file export/import UI. Normal saves still
@@ -25,11 +26,22 @@ The user's detailed workflow is title + watched year/month + optional comment,
 then grade by placing the draft into a seven-grade tier board. Within each grade,
 left-to-right order is meaningful and persisted in the backup record array. Year
 and month filters must preserve that relative order, as must metadata edits.
+Records written by the current code use version 2 in the existing storage key.
+Read version 1 without auto-writing; old clients must reject v2 instead of dropping
+rewatch history. Rewatch snapshots retain dates, grades, comments and tags, with a
+200-entry limit per work. Historical period projections are read-only; only latest
+records may be reordered. Tie-breaking in summaries uses the current tier order,
+not a stored historical board position. Preserve the stale-tab write safeguards.
 Never fabricate missing watched dates for legacy records. Use dnd-kit for touch,
 mouse, and keyboard dragging. Tier cards must stay compact (140px wide, 56px
 content height). Display the watched month in small text at the top-left and the
 title below it. Unknown dates must say they are unregistered. Do not restore grade
-selects or arrow toolbars inside each card. Other details stay in the list/editor.
+selects or arrow toolbars inside each card. A separate tap-open placement dialog
+provides those accessible alternatives. Other details stay in the list/editor.
+Keep custom rating guides, yearly/monthly insights, duplicate-title warnings,
+image-only tier export and the save-state indicator. Do not mistake PNG saving
+for a data backup or restore manual JSON file controls. Delete undo must refuse
+to overwrite newer changes and form cancellation must protect dirty edits.
 
 ## Purpose
 
