@@ -854,3 +854,34 @@ For each meaningful run, append a dated entry with:
   improvements are to be started after verification. Deployment outcome is checked
   separately on the connected anime-record-application-oh6d project and reported
   in the chat. This authorization does not permit later unattended releases.
+
+### 2026-10-20 - Remove the Build-Time Database Requirement
+
+- User reported failure of the connected anime-record-application-wiah project,
+  while anime-record-application-oh6d had successfully deployed the same commit.
+  The supplied log shows DATABASE_URL is required during legacy /anime/new page
+  collection. Reproduced locally with both DB URLs empty (the parallel collection
+  failed on /anime/[id], through the same eager src/lib/prisma.ts initialization).
+- Made Prisma construction lazy and retained the development client cache and
+  method receiver binding. Importing legacy modules no longer requires DB setup;
+  actual DB access without a URL still throws instead of using fake credentials.
+  No runtime database behavior is silently disabled and no provider secrets changed.
+- Added four mocked initialization tests and made the verify build step explicitly
+  clear DATABASE_URL/DIRECT_URL. This protects against the previously masked
+  regression: dummy build URLs had made the eager import appear valid locally.
+  Updated README.md and docs/autonomous-development.md to remove the obsolete
+  personal-app build requirement for database configuration.
+- Standalone no-DB build and initialization tests passed. The first full test run
+  timed out in an unchanged legacy profile test, cascading into its next case;
+  both passed unchanged in isolation, then all 284 tests passed on the full retry.
+  Final lint/build/browser verification is recorded below before release.
+- Changed src/lib/prisma.ts, scripts/verify.mjs, tests/prisma-initialization.test.ts,
+  README.md, and the autonomous docs. No production DB access or writes, schema
+  migrations, dependency changes, or environment-secret changes are involved.
+  User explicitly requested fixing the failed Vercel deployment; publish this
+  bounded fix and verify the wiah status, not only the previously successful oh6d.
+- Final verify passed all 284 tests (37 files), lint, the explicit no-DB build and
+  50 browser cases (desktop held-touch case intentionally skipped). A preview
+  started at http://127.0.0.1:3032 with both DB URLs empty; GET /anime/new followed
+  its redirect to /library and returned 200 with the personal app. No application
+  records were read or changed for this check. Release status is checked after push.

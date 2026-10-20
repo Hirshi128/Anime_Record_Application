@@ -48,8 +48,9 @@ npm.cmd install
 npm.cmd run dev -- --hostname 127.0.0.1 --port 3032
 ```
 
-検証は `npm.cmd run verify`。個人用画面はDBを使用しませんが、旧実装が同居する間は
-ビルドのためにDB URL設定が必要です。verifyは安全なダミーURLに強制置換します。
+検証は `npm.cmd run verify`。個人用画面とそのビルドにDB URL設定は不要です。
+旧実装のDBクライアントは実際に利用された時だけ初期化します。
+verifyはテスト用URLをダミーに強制置換し、ビルド時はDB URLを空にして回帰を検出します。
 本番DBのmigrationは実行しないでください。
 
 ## Legacy Server Setup (Reference Only)

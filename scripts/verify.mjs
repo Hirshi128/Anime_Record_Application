@@ -12,8 +12,10 @@ const env = {
 };
 
 for (const script of ["test", "lint", "build", "test:browser:personal"]) {
+  // Personal-app builds must not depend on legacy database configuration.
+  const scriptEnv = script === "build" ? { ...env, DATABASE_URL: "", DIRECT_URL: "" } : env;
   const code = await new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [npm, "run", script], { env, stdio: "inherit" });
+    const child = spawn(process.execPath, [npm, "run", script], { env: scriptEnv, stdio: "inherit" });
     child.once("error", reject);
     child.once("exit", (code) => resolve(code ?? 1));
   });

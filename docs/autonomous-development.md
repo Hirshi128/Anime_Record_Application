@@ -11,6 +11,10 @@ Use npm.cmd run verify: it runs all unit tests, lint, build, and the new persona
 browser suite. Old auth/server modules and tests are retained only as legacy
 reference. All production Neon data must remain untouched. The auth rollout and
 social priorities below are historical, not instructions to deploy or extend them.
+Personal-app builds require no database URL. Keep legacy Prisma initialization
+lazy: imports may occur during Next page collection, but only actual DB use should
+require configuration. verify deliberately builds with both DB URLs empty; do not
+replace this regression check with dummy URLs that hide eager initialization.
 Local records are per browser and origin, not cloud-synced. The personal shell and
 immutable static assets now support offline restarts after an online warm-up on
 HTTPS/localhost. Never cache API, RSC, legacy/auth pages or hydrated user content.
