@@ -2,15 +2,19 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { prisma } from "@/lib/prisma";
+import { parseRecordId } from "@/lib/record-id";
+import { usesCredentialAuth } from "@/lib/auth-mode";
+import { getSessionUser } from "@/lib/auth-session";
 
 export const currentUserCookieName = "anime_record_user_id";
 
 export async function getCurrentUser() {
+  if (usesCredentialAuth()) return getSessionUser();
   const cookieStore = await cookies();
   const rawUserId = cookieStore.get(currentUserCookieName)?.value;
-  const userId = Number(rawUserId);
+  const userId = parseRecordId(rawUserId);
 
-  if (!Number.isInteger(userId) || userId <= 0) {
+  if (userId === null) {
     return null;
   }
 

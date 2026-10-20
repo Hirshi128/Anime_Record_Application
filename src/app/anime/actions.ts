@@ -5,65 +5,15 @@ import { redirect } from "next/navigation";
 
 import { requireCurrentUser } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
-import { isGenre, isRating, isWatchStatus } from "@/lib/anime-options";
-
-function getString(formData: FormData, key: string) {
-  const value = formData.get(key);
-  return typeof value === "string" ? value.trim() : "";
-}
-
-function parseTagNames(formData: FormData) {
-  const seen = new Set<string>();
-
-  return formData
-    .getAll("tags")
-    .map((tag) => (typeof tag === "string" ? tag.trim() : ""))
-    .filter((tag) => {
-      if (!isGenre(tag)) {
-        return false;
-      }
-
-      const key = tag.toLocaleLowerCase();
-      if (seen.has(key)) {
-        return false;
-      }
-
-      seen.add(key);
-      return true;
-    });
-}
-
-function parseAnimeForm(formData: FormData) {
-  const title = getString(formData, "title");
-  const rating = getString(formData, "rating");
-  const status = getString(formData, "status");
-  const review = getString(formData, "review");
-
-  if (!title) {
-    throw new Error("タイトルは必須です。");
-  }
-
-  if (!isRating(rating)) {
-    throw new Error("評価の値が不正です。");
-  }
-
-  if (!isWatchStatus(status)) {
-    throw new Error("視聴状況の値が不正です。");
-  }
-
-  return {
-    title,
-    rating,
-    status,
-    review: review || null,
-    tagNames: parseTagNames(formData),
-  };
-}
+import { parseAnimeForm } from "@/lib/anime-form-data";
+import type { FormState } from "@/lib/form-state";
+import { lockUsers } from "@/lib/transaction-locks";
+import { parseRecordId } from "@/lib/record-id";
 
 function parseAnimeId(id: string) {
-  const animeId = Number(id);
+  const animeId = parseRecordId(id);
 
-  if (!Number.isInteger(animeId) || animeId <= 0) {
+  if (animeId === null) {
     throw new Error("アニメIDが不正です。");
   }
 
@@ -72,9 +22,21 @@ function parseAnimeId(id: string) {
 
 const featuredAnimeLimit = 3;
 
-export async function createAnime(formData: FormData) {
+function revalidateAnimePages(animeId?: number) {
+  revalidatePath("/anime");
+  revalidatePath("/users/profile");
+  revalidatePath("/users/search");
+  if (animeId !== undefined) revalidatePath(`/anime/${animeId}`);
+}
+
+export async function createAnime(
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await requireCurrentUser();
-  const { title, rating, status, review, tagNames } = parseAnimeForm(formData);
+  const parsed = parseAnimeForm(formData);
+  if (parsed.error) return { message: parsed.error };
+  const { title, rating, status, review, tagNames } = parsed.data;
 
   const anime = await prisma.anime.create({
     data: {
@@ -99,16 +61,22 @@ export async function createAnime(formData: FormData) {
     },
   });
 
-  revalidatePath("/anime");
+  revalidateAnimePages();
   redirect(`/anime/${anime.id}`);
 }
 
-export async function updateAnime(id: string, formData: FormData) {
+export async function updateAnime(
+  id: string,
+  _state: FormState,
+  formData: FormData,
+): Promise<FormState> {
   const user = await requireCurrentUser();
   const animeId = parseAnimeId(id);
-  const { title, rating, status, review, tagNames } = parseAnimeForm(formData);
+  const parsed = parseAnimeForm(formData);
+  if (parsed.error) return { message: parsed.error };
+  const { title, rating, status, review, tagNames } = parsed.data;
 
-  await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const existingAnime = await tx.anime.findFirst({
       where: {
         id: animeId,
@@ -118,7 +86,10 @@ export async function updateAnime(id: string, formData: FormData) {
     });
 
     if (!existingAnime) {
-      throw new Error("編集できるアニメ記録が見つかりません。");
+      return {
+        message:
+          "編集できるアニメ記録が見つかりません。一覧を確認してください。",
+      };
     }
 
     await tx.animeTag.deleteMany({
@@ -144,14 +115,16 @@ export async function updateAnime(id: string, formData: FormData) {
         },
       },
     });
+    return null;
   });
 
-  revalidatePath("/anime");
-  revalidatePath(`/anime/${animeId}`);
+  if (result) return result;
+
+  revalidateAnimePages(animeId);
   redirect(`/anime/${animeId}`);
 }
 
-export async function deleteAnime(id: string) {
+export async function deleteAnime(id: string): Promise<FormState> {
   const user = await requireCurrentUser();
   const animeId = parseAnimeId(id);
 
@@ -162,15 +135,16 @@ export async function deleteAnime(id: string) {
     },
   });
 
-  revalidatePath("/anime");
+  revalidateAnimePages(animeId);
   redirect("/anime");
 }
 
-export async function featureAnime(id: string) {
+export async function featureAnime(id: string): Promise<FormState> {
   const user = await requireCurrentUser();
   const animeId = parseAnimeId(id);
 
-  await prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
+    await lockUsers(tx, user.id);
     const anime = await tx.anime.findFirst({
       where: {
         id: animeId,
@@ -183,8 +157,10 @@ export async function featureAnime(id: string) {
     });
 
     if (!anime) {
-      throw new Error("今イチ押しにできるアニメ記録が見つかりません。");
+      return { message: "今イチ押しにできるアニメ記録が見つかりません。" };
     }
+
+    if (anime.isFeatured) return null;
 
     if (!anime.isFeatured) {
       const featuredCount = await tx.anime.count({
@@ -195,7 +171,9 @@ export async function featureAnime(id: string) {
       });
 
       if (featuredCount >= featuredAnimeLimit) {
-        throw new Error(`今イチ押しは${featuredAnimeLimit}件まで選べます。`);
+        return {
+          message: `今イチ押しは${featuredAnimeLimit}件まで選べます。別の作品を解除してください。`,
+        };
       }
     }
 
@@ -206,33 +184,37 @@ export async function featureAnime(id: string) {
         featuredAt: new Date(),
       },
     });
+    return null;
   });
 
-  revalidatePath("/anime");
-  revalidatePath(`/anime/${animeId}`);
+  if (result) return result;
+
+  revalidateAnimePages(animeId);
   redirect(`/anime/${animeId}`);
 }
 
-export async function unfeatureAnime(id: string) {
+export async function unfeatureAnime(id: string): Promise<FormState> {
   const user = await requireCurrentUser();
   const animeId = parseAnimeId(id);
 
-  const result = await prisma.anime.updateMany({
-    where: {
-      id: animeId,
-      userId: user.id,
-    },
-    data: {
-      isFeatured: false,
-      featuredAt: null,
-    },
+  const result = await prisma.$transaction(async (tx) => {
+    await lockUsers(tx, user.id);
+    return tx.anime.updateMany({
+      where: {
+        id: animeId,
+        userId: user.id,
+      },
+      data: {
+        isFeatured: false,
+        featuredAt: null,
+      },
+    });
   });
 
   if (result.count === 0) {
-    throw new Error("今イチ押しを解除できるアニメ記録が見つかりません。");
+    return { message: "今イチ押しを解除できるアニメ記録が見つかりません。" };
   }
 
-  revalidatePath("/anime");
-  revalidatePath(`/anime/${animeId}`);
+  revalidateAnimePages(animeId);
   redirect(`/anime/${animeId}`);
 }

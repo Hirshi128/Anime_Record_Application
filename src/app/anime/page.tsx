@@ -1,6 +1,8 @@
 import Link from "next/link";
+import { ArrowLeft, ChartNoAxesColumn, LogOut, Plus, UserRound, UsersRound } from "lucide-react";
 
 import { logoutUser } from "@/app/users/actions";
+import { usesCredentialAuth } from "@/lib/auth-mode";
 import { FriendRequestStatus } from "@/generated/prisma/enums";
 import { requireCurrentUser } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
@@ -25,6 +27,8 @@ type AnimeListPageProps = {
     status?: string | string[];
     tag?: string | string[];
     tagMode?: string | string[];
+    sort?: string | string[];
+    page?: string | string[];
   }>;
 };
 
@@ -44,6 +48,8 @@ export default async function AnimeListPage({
   const rating = getParam(params.rating);
   const status = getParam(params.status);
   const tagMode = getParam(params.tagMode) === "all" ? "all" : "any";
+  const requestedSort = getParam(params.sort);
+  const sort = requestedSort === "rating" || requestedSort === "title" ? requestedSort : "updated";
   const currentUser = await requireCurrentUser();
   const selectedGenres = Array.from(
     new Set(getParams(params.tag).map((genre) => genre.trim()).filter(isGenre)),
@@ -82,13 +88,13 @@ export default async function AnimeListPage({
       query
         ? {
             OR: [
-              { title: { contains: query } },
-              { review: { contains: query } },
+              { title: { contains: query, mode: "insensitive" } },
+              { review: { contains: query, mode: "insensitive" } },
               {
                 tags: {
                   some: {
                     tag: {
-                      name: { contains: query },
+                      name: { contains: query, mode: "insensitive" },
                     },
                   },
                 },
@@ -101,6 +107,26 @@ export default async function AnimeListPage({
       genreFilter,
     ],
   };
+
+  const pageSize = 24;
+  const totalAnime = await prisma.anime.count({ where });
+  const totalPages = Math.max(1, Math.ceil(totalAnime / pageSize));
+  const requestedPage = Number(getParam(params.page));
+  const page = Number.isSafeInteger(requestedPage) && requestedPage > 0 ? Math.min(requestedPage, totalPages) : 1;
+  const orderBy: Prisma.AnimeOrderByWithRelationInput[] = sort === "rating"
+    ? [{ rating: "asc" }, { updatedAt: "desc" }, { id: "desc" }]
+    : sort === "title" ? [{ title: "asc" }, { id: "desc" }] : [{ updatedAt: "desc" }, { id: "desc" }];
+  function pageHref(nextPage: number) {
+    const search = new URLSearchParams();
+    if (query) search.set("q", query);
+    if (isRating(rating)) search.set("rating", rating);
+    if (isWatchStatus(status)) search.set("status", status);
+    selectedGenres.forEach((genre) => search.append("tag", genre));
+    if (selectedGenres.length) search.set("tagMode", tagMode);
+    if (sort !== "updated") search.set("sort", sort);
+    if (nextPage > 1) search.set("page", String(nextPage));
+    return `/anime${search.size ? `?${search}` : ""}#anime-results`;
+  }
 
   const [animeList, featuredAnimeList, pendingFriendRequestCount] = await Promise.all([
     prisma.anime.findMany({
@@ -117,9 +143,9 @@ export default async function AnimeListPage({
           },
         },
       },
-      orderBy: {
-        updatedAt: "desc",
-      },
+      orderBy,
+      take: pageSize,
+      skip: (page - 1) * pageSize,
     }),
     prisma.anime.findMany({
       where: {
@@ -164,49 +190,53 @@ export default async function AnimeListPage({
     <main className="app-page text-zinc-950">
       <section className="page-shell space-y-8">
         <header className="record-hero">
-          <div className="record-hero-content flex flex-col justify-between gap-6 sm:flex-row sm:items-end">
-          <div>
+          <div className="record-hero-content space-y-6">
             <Link
-              className="button-secondary mb-5"
+              className="button-secondary"
               href="/"
             >
-              ← ホームへ戻る
+              <ArrowLeft aria-hidden="true" size={18} />ホームへ戻る
             </Link>
-            <p className="eyebrow">Library</p>
-            <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
-              アニメ一覧
-            </h1>
-            <p className="mt-3 text-sm text-white/78">
-              {currentUser.displayName}さんの記録 / {animeList.length}件
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-3">
-            <Link className="button-secondary w-fit" href="/users">
-              ユーザー切替
-            </Link>
-            <Link className="button-secondary w-fit" href="/users/profile">
-              プロフィール登録
-            </Link>
-            <Link
-              className="button-secondary button-with-notification w-fit"
-              href="/users/search"
-            >
-              フレンド検索
-              {pendingFriendRequestCount > 0 ? (
-                <span aria-hidden="true" className="friend-alert-mark">
-                  !
-                </span>
-              ) : null}
-            </Link>
-            <form action={logoutUser}>
-              <button className="button-secondary" type="submit">
-                ログアウト
-              </button>
-            </form>
-            <Link className="button-primary w-fit" href="/anime/new">
-              新規登録
-            </Link>
-          </div>
+            <div className="flex flex-col justify-between gap-5 sm:flex-row sm:items-center">
+              <div>
+                <p className="eyebrow">Library</p>
+                <h1 className="mt-2 text-3xl font-semibold">アニメ一覧</h1>
+                <p className="mt-2 text-sm text-zinc-600">
+                  {currentUser.displayName}さんの記録 / {totalAnime}件
+                </p>
+              </div>
+              <div className="primary-actions">
+                <Link className="button-primary button-large" href="/anime/new">
+                  <Plus aria-hidden="true" size={22} />新規登録
+                </Link>
+              </div>
+            </div>
+            <nav className="page-navigation" aria-label="アカウントメニュー">
+              <Link className="button-secondary" href="/anime/insights"><ChartNoAxesColumn aria-hidden="true" size={18} />好みの傾向</Link>
+              <Link className="button-secondary" href="/users">
+                <UsersRound aria-hidden="true" size={18} />{usesCredentialAuth() ? "アカウント" : "ユーザー切替"}
+              </Link>
+              <Link className="button-secondary" href="/users/profile">
+                <UserRound aria-hidden="true" size={18} />プロフィール登録
+              </Link>
+              <Link
+                className="button-secondary button-with-notification"
+                href="/users/search"
+              >
+                <UsersRound aria-hidden="true" size={18} />フレンド検索
+                {pendingFriendRequestCount > 0 ? (
+                    <>
+                      <span aria-hidden="true" className="friend-alert-mark">!</span>
+                      <span className="sr-only">未対応のフレンド申請 {pendingFriendRequestCount} 件</span>
+                    </>
+                ) : null}
+              </Link>
+              <form action={logoutUser}>
+                <button className="button-secondary" type="submit">
+                  <LogOut aria-hidden="true" size={18} />ログアウト
+                </button>
+              </form>
+            </nav>
           </div>
         </header>
 
@@ -254,7 +284,7 @@ export default async function AnimeListPage({
           action="/anime"
           className="surface-panel grid gap-5 p-5"
         >
-          <div className="grid gap-4 lg:grid-cols-[1fr_180px_180px_180px]">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_140px_140px_160px_180px]">
             <label className="block space-y-2">
               <span className="text-sm font-semibold text-zinc-800">検索</span>
               <input
@@ -298,6 +328,15 @@ export default async function AnimeListPage({
               </select>
             </label>
 
+            <label className="block space-y-2">
+              <span className="text-sm font-semibold text-zinc-800">並び順</span>
+              <select className="field-control" name="sort" defaultValue={sort}>
+                <option value="updated">更新が新しい順</option>
+                <option value="rating">高評価順</option>
+                <option value="title">作品名順</option>
+              </select>
+            </label>
+
             <fieldset className="space-y-2">
               <legend className="text-sm font-semibold text-zinc-800">
                 ジャンル条件
@@ -331,14 +370,14 @@ export default async function AnimeListPage({
             <legend className="text-sm font-semibold text-zinc-800">
               ジャンル
             </legend>
-            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="grid gap-2 min-[360px]:grid-cols-2 lg:grid-cols-4">
               {genreOptions.map((genre) => (
                 <label
                   className="choice-tile"
                   key={genre}
                 >
                   <input
-                    className="size-4 accent-amber-700"
+                    className="size-4 shrink-0 accent-amber-700"
                     defaultChecked={selectedGenres.includes(genre)}
                     name="tag"
                     type="checkbox"
@@ -355,12 +394,12 @@ export default async function AnimeListPage({
 
           <div className="flex flex-wrap gap-3">
             <button
-              className="button-primary"
+              className="button-primary button-large"
               type="submit"
             >
               絞り込む
             </button>
-            {hasFilters ? (
+            {hasFilters || sort !== "updated" ? (
               <Link
                 className="button-secondary"
                 href="/anime"
@@ -372,13 +411,13 @@ export default async function AnimeListPage({
         </form>
 
         {animeList.length === 0 ? (
-          <div className="surface-panel p-8 text-sm leading-7 text-zinc-600">
+          <div id="anime-results" className="surface-panel p-8 text-sm leading-7 text-zinc-600">
             {hasFilters
               ? "条件に一致するアニメがありません。検索条件を変えてみてください。"
               : "まだアニメが登録されていません。まずは見終わった作品や視聴中の作品を1件追加してみましょう。"}
           </div>
         ) : (
-          <div className="grid gap-4">
+          <div id="anime-results" className="grid gap-4">
             {animeList.map((anime) => {
               const tagNames = anime.tags.map((animeTag) => animeTag.tag.name);
 
@@ -438,6 +477,13 @@ export default async function AnimeListPage({
             })}
           </div>
         )}
+        {totalPages > 1 ? (
+          <nav className="flex flex-wrap items-center justify-between gap-3" aria-label="アニメ一覧のページ">
+            {page > 1 ? <Link className="button-secondary" href={pageHref(page - 1)}>← 前のページ</Link> : <span />}
+            <span className="text-sm text-zinc-600">{page} / {totalPages} ページ</span>
+            {page < totalPages ? <Link className="button-secondary" href={pageHref(page + 1)}>次のページ →</Link> : <span />}
+          </nav>
+        ) : null}
       </section>
     </main>
   );

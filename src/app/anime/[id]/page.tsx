@@ -1,11 +1,14 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 
 import { AnimeForm } from "../anime-form";
+import { ActionButtonForm } from "@/app/action-button-form";
 import { deleteAnime, featureAnime, unfeatureAnime, updateAnime } from "../actions";
 import { requireCurrentUser } from "@/lib/current-user";
 import { prisma } from "@/lib/prisma";
 import { formatDate, statusLabels } from "@/lib/anime-options";
+import { parseRecordId } from "@/lib/record-id";
 
 export const dynamic = "force-dynamic";
 
@@ -17,10 +20,10 @@ type AnimeDetailPageProps = {
 
 export default async function AnimeDetailPage({ params }: AnimeDetailPageProps) {
   const { id } = await params;
-  const animeId = Number(id);
+  const animeId = parseRecordId(id);
   const currentUser = await requireCurrentUser();
 
-  if (!Number.isInteger(animeId) || animeId <= 0) {
+  if (animeId === null) {
     notFound();
   }
 
@@ -70,28 +73,28 @@ export default async function AnimeDetailPage({ params }: AnimeDetailPageProps) 
             className="button-secondary"
             href="/anime"
           >
-            ← アニメ一覧へ戻る
+            <ArrowLeft aria-hidden="true" size={18} />アニメ一覧へ戻る
           </Link>
           <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <p className="eyebrow">
                 Edit Record
               </p>
-              <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
+              <h1 className="mt-3 text-3xl font-semibold">
                 {anime.title}
               </h1>
               <div className="mt-3 flex flex-wrap gap-2">
                 <span className={`rating-badge rating-${anime.rating}`}>
                   評価 {anime.rating}
                 </span>
-                <span className="rounded-md border border-white/30 bg-white/16 px-3 py-1 text-sm font-semibold text-white">
+                <span className="rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm font-semibold text-zinc-600">
                   {statusLabels[anime.status]}
                 </span>
-                <span className="rounded-md border border-white/30 bg-white/16 px-3 py-1 text-sm font-semibold text-white">
+                <span className="rounded-md border border-zinc-200 bg-white px-3 py-1 text-sm font-semibold text-zinc-600">
                   更新 {formatDate(anime.updatedAt)}
                 </span>
                 {anime.isFeatured ? (
-                  <span className="rounded-md border border-amber-200/70 bg-amber-200/20 px-3 py-1 text-sm font-semibold text-amber-50">
+                  <span className="featured-chip">
                     今イチ押し
                   </span>
                 ) : null}
@@ -99,35 +102,13 @@ export default async function AnimeDetailPage({ params }: AnimeDetailPageProps) 
             </div>
             <div className="flex flex-wrap gap-3 sm:justify-end">
               {anime.isFeatured ? (
-                <form action={unfeatureAction}>
-                  <button
-                    className="button-secondary"
-                    type="submit"
-                  >
-                    イチ押し解除
-                  </button>
-                </form>
+                <ActionButtonForm action={unfeatureAction} label="イチ押し解除" className="button-secondary" />
               ) : (
-                <form action={featureAction}>
-                  <button
-                    className="button-primary"
-                    disabled={!canFeature}
-                    type="submit"
-                  >
-                    今イチ押しにする
-                  </button>
-                </form>
+                <ActionButtonForm action={featureAction} label="今イチ押しにする" className="button-primary button-large" disabled={!canFeature} />
               )}
-              <form action={deleteAction}>
-                <button
-                  className="button-danger"
-                  type="submit"
-                >
-                  削除
-                </button>
-              </form>
+              <ActionButtonForm action={deleteAction} label="削除" pendingLabel="削除中..." className="button-danger" confirmation={`「${anime.title}」の記録を削除しますか？この操作は取り消せません。`} />
               {!canFeature ? (
-                <p className="basis-full text-right text-xs font-semibold text-amber-100">
+                <p className="basis-full text-right text-xs font-semibold text-zinc-600">
                   今イチ押しは3件までです。別の作品を解除してから選べます。
                 </p>
               ) : null}

@@ -4,7 +4,7 @@ export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "Anime Record",
     short_name: "Anime Record",
-    description: "見たアニメの評価、感想、イチ押し、フレンドを管理するアプリ",
+    description: "見たアニメの評価と感想を自分の端末に記録するアプリ",
     start_url: "/",
     scope: "/",
     display: "standalone",

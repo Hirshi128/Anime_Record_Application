@@ -1,8 +1,13 @@
 import Link from "next/link";
+import { ArrowLeft, Search } from "lucide-react";
+import { ActionButtonForm } from "@/app/action-button-form";
+import { RefreshNotifications } from "./refresh-notifications";
 
 import {
   acceptFriendRequest,
+  cancelFriendRequest,
   rejectFriendRequest,
+  removeFriend,
   sendFriendRequest,
 } from "../actions";
 import { FriendRequestStatus } from "@/generated/prisma/enums";
@@ -15,11 +20,14 @@ export const dynamic = "force-dynamic";
 type UserSearchPageProps = {
   searchParams: Promise<{
     q?: string | string[];
+    page?: string | string[];
+    friendPage?: string | string[];
+    requestPage?: string | string[];
   }>;
 };
 
 function getParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? "" : value ?? "";
+  return Array.isArray(value) ? (value[0] ?? "") : (value ?? "");
 }
 
 function FeaturedAnimeList({
@@ -75,36 +83,77 @@ export default async function UserSearchPage({
       query
         ? {
             OR: [
-              { displayName: { contains: query } },
-              { username: { contains: query } },
+              { displayName: { contains: query, mode: "insensitive" } },
+              { username: { contains: query, mode: "insensitive" } },
             ],
           }
         : {},
     ],
   };
 
+  const pageSize = 30;
+  const [totalUsers, totalFriends, totalRequests] = await Promise.all([
+    prisma.user.count({ where: userWhere }),
+    prisma.friendship.count({ where: { userId: currentUser.id } }),
+    prisma.friendRequest.count({ where: { receiverId: currentUser.id, status: FriendRequestStatus.PENDING } }),
+  ]);
+  const totalPages = Math.max(1, Math.ceil(totalUsers / pageSize));
+  const requestedPage = Number(getParam(params.page));
+  const page =
+    Number.isSafeInteger(requestedPage) && requestedPage > 0
+      ? Math.min(requestedPage, totalPages)
+      : 1;
+  const friendPageSize = 12;
+  const totalFriendPages = Math.max(
+    1,
+    Math.ceil(totalFriends / friendPageSize),
+  );
+  const requestedFriendPage = Number(getParam(params.friendPage));
+  const friendPage =
+    Number.isSafeInteger(requestedFriendPage) && requestedFriendPage > 0
+      ? Math.min(requestedFriendPage, totalFriendPages)
+      : 1;
+  const requestPageSize = 12;
+  const totalRequestPages = Math.max(1, Math.ceil(totalRequests / requestPageSize));
+  const requestedRequestPage = Number(getParam(params.requestPage));
+  const requestPage = Number.isSafeInteger(requestedRequestPage) && requestedRequestPage > 0
+    ? Math.min(requestedRequestPage, totalRequestPages) : 1;
+  function pageHref(
+    nextPage: number,
+    nextFriendPage = friendPage,
+    fragment = "user-results",
+    nextRequestPage = requestPage,
+  ) {
+    const search = new URLSearchParams();
+    if (query) search.set("q", query);
+    if (nextPage > 1) search.set("page", String(nextPage));
+    if (nextFriendPage > 1) search.set("friendPage", String(nextFriendPage));
+    if (nextRequestPage > 1) search.set("requestPage", String(nextRequestPage));
+    return `/users/search${search.size ? `?${search}` : ""}#${fragment}`;
+  }
+
+  const users = await prisma.user.findMany({
+    where: userWhere,
+    include: {
+      favoriteGenres: { orderBy: { name: "asc" } },
+      anime: {
+        where: { isFeatured: true },
+        orderBy: [{ featuredAt: "desc" }, { updatedAt: "desc" }],
+        take: 3,
+      },
+    },
+    orderBy: [{ displayName: "asc" }, { username: "asc" }],
+    take: pageSize,
+    skip: (page - 1) * pageSize,
+  });
+  const visibleUserIds = users.map((user) => user.id);
   const [
-    users,
     receivedRequests,
+    visibleIncomingRequests,
     sentPendingRequests,
     friendships,
     friendRows,
   ] = await Promise.all([
-    prisma.user.findMany({
-      where: userWhere,
-      include: {
-        favoriteGenres: {
-          orderBy: { name: "asc" },
-        },
-        anime: {
-          where: { isFeatured: true },
-          orderBy: [{ featuredAt: "desc" }, { updatedAt: "desc" }],
-          take: 3,
-        },
-      },
-      orderBy: [{ displayName: "asc" }, { username: "asc" }],
-      take: 30,
-    }),
     prisma.friendRequest.findMany({
       where: {
         receiverId: currentUser.id,
@@ -124,11 +173,18 @@ export default async function UserSearchPage({
           },
         },
       },
-      orderBy: { createdAt: "desc" },
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      take: requestPageSize,
+      skip: (requestPage - 1) * requestPageSize,
+    }),
+    prisma.friendRequest.findMany({
+      where: { receiverId: currentUser.id, senderId: { in: visibleUserIds }, status: FriendRequestStatus.PENDING },
+      select: { id: true, senderId: true },
     }),
     prisma.friendRequest.findMany({
       where: {
         senderId: currentUser.id,
+        receiverId: { in: visibleUserIds },
         status: FriendRequestStatus.PENDING,
       },
       select: {
@@ -139,6 +195,7 @@ export default async function UserSearchPage({
     prisma.friendship.findMany({
       where: {
         userId: currentUser.id,
+        friendId: { in: visibleUserIds },
       },
       select: {
         friendId: true,
@@ -162,17 +219,20 @@ export default async function UserSearchPage({
           },
         },
       },
-      orderBy: { createdAt: "desc" },
-      take: 12,
+      orderBy: [{ createdAt: "desc" }, { friendId: "asc" }],
+      take: friendPageSize,
+      skip: (friendPage - 1) * friendPageSize,
     }),
   ]);
 
-  const friendIds = new Set(friendships.map((friendship) => friendship.friendId));
+  const friendIds = new Set(
+    friendships.map((friendship) => friendship.friendId),
+  );
   const sentPendingByReceiverId = new Map(
     sentPendingRequests.map((request) => [request.receiverId, request.id]),
   );
   const receivedPendingBySenderId = new Map(
-    receivedRequests.map((request) => [request.senderId, request.id]),
+    visibleIncomingRequests.map((request) => [request.senderId, request.id]),
   );
 
   return (
@@ -181,16 +241,15 @@ export default async function UserSearchPage({
         <header className="record-hero">
           <div className="record-hero-content flex flex-col justify-between gap-6 md:flex-row md:items-end">
             <div>
-              <Link className="button-secondary mb-5" href="/anime">
-                ← アニメ一覧へ戻る
-              </Link>
+              <div className="mb-5">
+                <Link className="button-secondary" href="/anime">
+                  <ArrowLeft aria-hidden="true" size={18} />アニメ一覧へ戻る
+                </Link>
+              </div>
               <p className="eyebrow">Friends</p>
-              <h1 className="mt-3 text-3xl font-semibold sm:text-4xl">
+              <h1 className="mt-3 text-3xl font-semibold">
                 ユーザー検索
               </h1>
-              <p className="mt-3 max-w-2xl text-sm leading-6 text-white/78">
-                気になるユーザーを探して、イチ押しアニメや好きなジャンルを見ながらフレンド申請できます。
-              </p>
             </div>
             <Link className="button-secondary w-fit" href="/users/profile">
               プロフィール登録
@@ -198,15 +257,15 @@ export default async function UserSearchPage({
           </div>
         </header>
 
-        <section className="surface-panel p-5">
+        <section id="friend-requests" className="surface-panel p-5">
           <div className="flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
             <div>
-              <h2 className="text-xl font-semibold">通知</h2>
-              <p className="mt-2 text-sm leading-6 text-zinc-600">
-                受け取ったフレンド申請がここに表示されます。
-              </p>
+              <h2 className="text-xl font-semibold">フレンド申請</h2>
             </div>
-            <span className="notification-badge">{receivedRequests.length}件</span>
+            <div className="flex flex-wrap items-center gap-3">
+              <span className="notification-badge">{totalRequests}件</span>
+              <RefreshNotifications />
+            </div>
           </div>
 
           {receivedRequests.length === 0 ? (
@@ -216,8 +275,14 @@ export default async function UserSearchPage({
           ) : (
             <div className="mt-5 grid gap-3">
               {receivedRequests.map((request) => {
-                const acceptAction = acceptFriendRequest.bind(null, String(request.id));
-                const rejectAction = rejectFriendRequest.bind(null, String(request.id));
+                const acceptAction = acceptFriendRequest.bind(
+                  null,
+                  String(request.id),
+                );
+                const rejectAction = rejectFriendRequest.bind(
+                  null,
+                  String(request.id),
+                );
 
                 return (
                   <article className="user-card" key={request.id}>
@@ -231,25 +296,36 @@ export default async function UserSearchPage({
                         </p>
                       </div>
                       <FeaturedAnimeList anime={request.sender.anime} />
-                      <FavoriteGenreList genres={request.sender.favoriteGenres} />
+                      <FavoriteGenreList
+                        genres={request.sender.favoriteGenres}
+                      />
                     </div>
                     <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
-                      <form action={acceptAction}>
-                        <button className="button-primary" type="submit">
-                          承認
-                        </button>
-                      </form>
-                      <form action={rejectAction}>
-                        <button className="button-secondary" type="submit">
-                          見送る
-                        </button>
-                      </form>
+                      <ActionButtonForm
+                        returnTo={pageHref(page, friendPage, "friend-requests")}
+                        action={acceptAction}
+                        label="承認"
+                        pendingLabel="承認中..."
+                      />
+                      <ActionButtonForm
+                        returnTo={pageHref(page, friendPage, "friend-requests")}
+                        action={rejectAction}
+                        label="見送る"
+                        className="button-secondary"
+                      />
                     </div>
                   </article>
                 );
               })}
             </div>
           )}
+          {totalRequestPages > 1 ? (
+            <nav className="mt-5 flex flex-wrap items-center justify-between gap-3" aria-label="フレンド申請のページ">
+              {requestPage > 1 ? <Link className="button-secondary" href={pageHref(page, friendPage, "friend-requests", requestPage - 1)}>← 前のページ</Link> : <span />}
+              <span className="text-sm text-zinc-600">{requestPage} / {totalRequestPages} ページ</span>
+              {requestPage < totalRequestPages ? <Link className="button-secondary" href={pageHref(page, friendPage, "friend-requests", requestPage + 1)}>次のページ →</Link> : <span />}
+            </nav>
+          ) : null}
         </section>
 
         <form action="/users/search" className="surface-panel p-5">
@@ -266,7 +342,8 @@ export default async function UserSearchPage({
             />
           </label>
           <div className="mt-4 flex flex-wrap gap-3">
-            <button className="button-primary" type="submit">
+            <button className="button-primary button-large" type="submit">
+              <Search aria-hidden="true" size={20} />
               検索
             </button>
             {query ? (
@@ -277,7 +354,8 @@ export default async function UserSearchPage({
           </div>
         </form>
 
-        <section className="grid gap-4">
+        <section id="user-results" className="grid gap-4">
+          <h2 className="text-lg font-semibold">ユーザー {totalUsers} 人</h2>
           {users.length === 0 ? (
             <div className="surface-panel p-6 text-sm leading-6 text-zinc-600">
               条件に合うユーザーが見つかりませんでした。
@@ -299,7 +377,9 @@ export default async function UserSearchPage({
                 <article className="user-card" key={user.id}>
                   <div className="min-w-0 space-y-4">
                     <div>
-                      <h2 className="text-xl font-semibold">{user.displayName}</h2>
+                      <h2 className="text-xl font-semibold">
+                        {user.displayName}
+                      </h2>
                       <p className="text-sm text-zinc-500">@{user.username}</p>
                     </div>
 
@@ -321,28 +401,45 @@ export default async function UserSearchPage({
 
                   <div className="flex shrink-0 flex-wrap gap-2 sm:justify-end">
                     {isFriend ? (
-                      <span className="friend-state-chip">フレンド</span>
+                      <>
+                        <span className="friend-state-chip">フレンド</span>
+                        <ActionButtonForm returnTo={pageHref(page)} action={removeFriend.bind(null, String(user.id))} label="フレンド解除" pendingLabel="解除中..." className="button-secondary" confirmation={`${user.displayName}さんとのフレンド関係を解除しますか？`} />
+                      </>
                     ) : receivedRequestId && acceptAction && rejectAction ? (
                       <>
-                        <form action={acceptAction}>
-                          <button className="button-primary" type="submit">
-                            承認
-                          </button>
-                        </form>
-                        <form action={rejectAction}>
-                          <button className="button-secondary" type="submit">
-                            見送る
-                          </button>
-                        </form>
+                        <ActionButtonForm
+                          returnTo={pageHref(page)}
+                          action={acceptAction}
+                          label="承認"
+                          pendingLabel="承認中..."
+                        />
+                        <ActionButtonForm
+                          returnTo={pageHref(page)}
+                          action={rejectAction}
+                          label="見送る"
+                          className="button-secondary"
+                        />
                       </>
                     ) : sentRequestId ? (
-                      <span className="pending-state-chip">申請中</span>
+                      <>
+                        <span className="pending-state-chip">申請中</span>
+                        <ActionButtonForm
+                          returnTo={pageHref(page)}
+                          action={cancelFriendRequest.bind(
+                            null,
+                            String(sentRequestId),
+                          )}
+                          label="申請を取り消す"
+                          className="button-secondary"
+                        />
+                      </>
                     ) : (
-                      <form action={sendAction}>
-                        <button className="button-primary" type="submit">
-                          フレンド申請
-                        </button>
-                      </form>
+                      <ActionButtonForm
+                        returnTo={pageHref(page)}
+                        action={sendAction}
+                        label="フレンド申請"
+                        pendingLabel="申請中..."
+                      />
                     )}
                   </div>
                 </article>
@@ -351,9 +448,36 @@ export default async function UserSearchPage({
           )}
         </section>
 
+        {totalPages > 1 ? (
+          <nav
+            className="flex flex-wrap items-center justify-between gap-3"
+            aria-label="ユーザー検索のページ"
+          >
+            {page > 1 ? (
+              <Link className="button-secondary" href={pageHref(page - 1)}>
+                ← 前のページ
+              </Link>
+            ) : (
+              <span />
+            )}
+            <span className="text-sm text-zinc-600">
+              {page} / {totalPages} ページ
+            </span>
+            {page < totalPages ? (
+              <Link className="button-secondary" href={pageHref(page + 1)}>
+                次のページ →
+              </Link>
+            ) : (
+              <span />
+            )}
+          </nav>
+        ) : null}
+
         {friendRows.length > 0 ? (
-          <section className="surface-panel p-5">
-            <h2 className="text-xl font-semibold">フレンド</h2>
+          <section id="friends" className="surface-panel p-5">
+            <h2 className="text-xl font-semibold">
+              フレンド {totalFriends} 人
+            </h2>
             <div className="mt-5 grid gap-3 md:grid-cols-2">
               {friendRows.map((row) => (
                 <article className="friend-mini-card" key={row.friendId}>
@@ -364,9 +488,40 @@ export default async function UserSearchPage({
                     </p>
                   </div>
                   <FeaturedAnimeList anime={row.friend.anime} />
+                  <ActionButtonForm returnTo={pageHref(page, friendPage, "friends")} action={removeFriend.bind(null, String(row.friendId))} label="フレンド解除" pendingLabel="解除中..." className="button-secondary" confirmation={`${row.friend.displayName}さんとのフレンド関係を解除しますか？`} />
                 </article>
               ))}
             </div>
+            {totalFriendPages > 1 ? (
+              <nav
+                className="mt-5 flex flex-wrap items-center justify-between gap-3"
+                aria-label="フレンド一覧のページ"
+              >
+                {friendPage > 1 ? (
+                  <Link
+                    className="button-secondary"
+                    href={pageHref(page, friendPage - 1, "friends")}
+                  >
+                    ← 前のページ
+                  </Link>
+                ) : (
+                  <span />
+                )}
+                <span className="text-sm text-zinc-600">
+                  {friendPage} / {totalFriendPages} ページ
+                </span>
+                {friendPage < totalFriendPages ? (
+                  <Link
+                    className="button-secondary"
+                    href={pageHref(page, friendPage + 1, "friends")}
+                  >
+                    次のページ →
+                  </Link>
+                ) : (
+                  <span />
+                )}
+              </nav>
+            ) : null}
           </section>
         ) : null}
       </section>

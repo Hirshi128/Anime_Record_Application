@@ -15,9 +15,10 @@ type AniListMedia = {
 };
 
 type AniListResponse = {
+  errors?: { message?: string }[];
   data?: {
     Page?: {
-      media?: AniListMedia[];
+      media?: (AniListMedia | null)[];
     };
   };
 };
@@ -47,6 +48,10 @@ export async function GET(request: NextRequest) {
     return Response.json({ suggestions: [] });
   }
 
+  if (search.length > 200) {
+    return Response.json({ suggestions: [] }, { status: 400 });
+  }
+
   try {
     const response = await fetch("https://graphql.anilist.co", {
       method: "POST",
@@ -59,6 +64,7 @@ export async function GET(request: NextRequest) {
         variables: { search },
       }),
       cache: "no-store",
+      signal: AbortSignal.timeout(8_000),
     });
 
     if (!response.ok) {
@@ -66,26 +72,43 @@ export async function GET(request: NextRequest) {
     }
 
     const payload = (await response.json()) as AniListResponse;
+    if (payload.errors?.length || !Array.isArray(payload.data?.Page?.media)) {
+      return Response.json({ suggestions: [] }, { status: 502 });
+    }
     const seen = new Set<string>();
+    const seenIds = new Set<number>();
     const suggestions =
       payload.data?.Page?.media
         ?.map((media) => {
-          const title =
-            media.title?.native ??
-            media.title?.userPreferred ??
-            media.title?.romaji ??
-            media.title?.english;
+          if (!media || typeof media !== "object" || !Number.isSafeInteger(media.id) || media.id <= 0 || seenIds.has(media.id)) {
+            return null;
+          }
+          const title = [
+            media.title?.native,
+            media.title?.userPreferred,
+            media.title?.romaji,
+            media.title?.english,
+          ]
+            .find(
+              (value) => typeof value === "string" && value.trim().length > 0,
+            )
+            ?.trim();
 
           if (!title || seen.has(title)) {
             return null;
           }
 
           seen.add(title);
+          seenIds.add(media.id);
 
           return {
             id: media.id,
             title,
-            subtitle: [media.title?.romaji, media.seasonYear, media.format]
+            subtitle: [
+              typeof media.title?.romaji === "string" ? media.title.romaji.trim() : null,
+              typeof media.seasonYear === "number" && Number.isInteger(media.seasonYear) && media.seasonYear > 0 ? media.seasonYear : null,
+              typeof media.format === "string" ? media.format.trim() : null,
+            ]
               .filter(Boolean)
               .join(" / "),
           };

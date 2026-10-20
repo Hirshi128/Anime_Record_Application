@@ -6,7 +6,7 @@ import path from "node:path";
 const databaseUrl = process.env.DATABASE_URL ?? "file:./prisma/dev.db";
 
 if (!databaseUrl.startsWith("file:")) {
-  throw new Error(`Only SQLite file URLs are supported. Received: ${databaseUrl}`);
+  throw new Error("Only SQLite file URLs are supported. Set DATABASE_URL to a local file URL.");
 }
 
 const rawPath = databaseUrl.slice("file:".length);

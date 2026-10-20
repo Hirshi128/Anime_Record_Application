@@ -29,6 +29,8 @@ model User {
   id                     Int                  @id @default(autoincrement())
   username               String               @unique
   displayName            String
+  credential             UserCredential?
+  sessions               AuthSession[]
   anime                  Anime[]
   favoriteGenres         UserFavoriteGenre[]
   sentFriendRequests     FriendRequest[]      @relation("SentFriendRequests")
@@ -37,6 +39,31 @@ model User {
   friendOf               Friendship[]         @relation("UserFriends")
   createdAt              DateTime             @default(now())
   updatedAt              DateTime             @updatedAt
+}
+
+model UserCredential {
+  userId       Int    @id
+  email        String @unique
+  passwordHash String
+  user         User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model AuthSession {
+  tokenHash String   @id
+  userId    Int
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model AuthAttempt {
+  key       String   @id
+  count     Int
+  expiresAt DateTime
+
+  @@index([expiresAt])
 }
 
 model UserFavoriteGenre {
