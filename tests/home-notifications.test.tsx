@@ -10,7 +10,11 @@ it("opens the personal library without authentication, friends, or database read
   expect(getUser).not.toHaveBeenCalled();
   expect(count).not.toHaveBeenCalled();
   expect(screen.getByRole("heading", { name: "Anime Record" })).toBeTruthy();
-  expect(screen.getByRole("button", { name: "アニメを記録" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "視聴したアニメを追加" })).toBeTruthy();
+  expect(screen.queryByText("わたしのアニメ記録")).toBeNull();
+  expect(screen.queryByRole("button", { name: "書き出し" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "読み込み" })).toBeNull();
+  expect(document.querySelector('input[type="file"]')).toBeNull();
   expect(screen.queryByText("フレンド検索")).toBeNull();
   expect(screen.queryByText("ログイン")).toBeNull();
 });

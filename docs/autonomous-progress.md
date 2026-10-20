@@ -780,3 +780,20 @@ For each meaningful run, append a dated entry with:
   failure. Preview restarted at http://127.0.0.1:3032 with dummy DB URLs.
 - No production DB access or writes, migration, push, or deployment. Remaining
   product limitations and Prisma audit warnings are unchanged from the prior log.
+
+### 2026-10-20 - Simplified Personal Library Commands
+
+- Removed the personal-journal subtitle, renamed the add command and new-record
+  dialog to the user-requested Japanese wording, and removed manual file export
+  and import controls/handlers. Browser-local persistence, its storage key, and
+  data validation are unchanged. Kept the browser-data-deletion and no-sync warning.
+- Changed src/app/personal-library.tsx, tests/home-notifications.test.tsx,
+  tests/browser/personal.spec.ts, README.md, docs/autonomous-development.md,
+  and this log. Updated automation guidance to preserve these product choices.
+- Verification: all 254 unit tests, lint, production build/TypeScript, and all
+  9 browser tests passed. Browser tests cover create, reload, edit, tier ordering,
+  legacy-route redirect, deletion persistence, and absent manual file controls.
+  Inspected desktop and 320px screenshots; the longer add command fits.
+- The user explicitly approved pushing this change and updating the public site.
+  No production database access, migrations, or data transfer are part of release.
+  Remaining: browser-data deletion loses records, and devices/browsers do not sync.

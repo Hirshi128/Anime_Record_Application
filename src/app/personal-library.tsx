@@ -2,11 +2,11 @@
 
 import Image from "next/image";
 import { useEffect, useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
-import { Download, Upload, Plus, Search, Pencil, Trash2, Save, X, BookOpen } from "lucide-react";
+import { Plus, Search, Pencil, Trash2, Save, X, BookOpen } from "lucide-react";
 import { genreOptions, statusLabels } from "@/lib/anime-options";
 import { TitleAutocomplete } from "./anime/title-autocomplete";
 import { TierBoard } from "./tier-board";
-import { decodeLibrary, encodeLibrary, libraryKey, newPersonalId, placeInTier, personalRatings, personalStatuses, saveLibrary, unavailableStorage, type PersonalRecord } from "@/lib/personal-library";
+import { decodeLibrary, libraryKey, newPersonalId, placeInTier, personalRatings, personalStatuses, saveLibrary, unavailableStorage, type PersonalRecord } from "@/lib/personal-library";
 
 const changedEvent = "personal-library-changed";
 function snapshot() {
@@ -32,7 +32,7 @@ function RecordEditor({ record, message, onSave, onClose }: { record?: PersonalR
       event.preventDefault();
       onSave({ id: record?.id ?? newPersonalId(), title: title.trim(), watchedMonth, rating: record?.rating ?? "A", status, review, tags, updatedAt: new Date().toISOString() });
     }}>
-      <div className="flex items-center justify-between gap-3"><h2 id={heading} className="text-xl font-semibold">{record ? "記録を編集" : "アニメを記録"}</h2><button className="button-secondary" type="button" aria-label="閉じる" title="閉じる" onClick={onClose}><X size={20} /></button></div>
+      <div className="flex items-center justify-between gap-3"><h2 id={heading} className="text-xl font-semibold">{record ? "記録を編集" : "視聴したアニメを追加"}</h2><button className="button-secondary" type="button" aria-label="閉じる" title="閉じる" onClick={onClose}><X size={20} /></button></div>
       <TitleAutocomplete value={title} onChange={setTitle} initialTitle={record?.title} />
       {title.length > 200 ? <p role="alert" className="form-error">タイトルは200文字以内で入力してください。</p> : null}
       <div className="grid gap-4 sm:grid-cols-2">
@@ -73,7 +73,6 @@ export function PersonalLibrary() {
   const [allGenres, setAllGenres] = useState(false);
   const [sort, setSort] = useState("updated");
   const [message, setMessage] = useState("");
-  const fileInput = useRef<HTMLInputElement>(null);
   const disabled = !ready || invalid;
   const editorSnapshot = useRef<string | null>(null);
   function openEditor(value: PersonalRecord | "new") { editorSnapshot.current = raw; setMessage(""); setEditor(value); }
@@ -88,33 +87,17 @@ export function PersonalLibrary() {
       return false;
     }
   }
-  function exportBackup() {
-    const blob = new Blob([encodeLibrary(records)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url; a.download = `anime-record-${new Date().toISOString().slice(0, 10)}.json`; a.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-  async function importBackup(file?: File) {
-    if (!file) return;
-    const expected = raw;
-    try {
-      if (file.size > 10 * 1024 * 1024) throw new Error("Large backup");
-      const imported = decodeLibrary(await file.text());
-      if (!window.confirm(`${imported.length}件のバックアップで、この端末の現在の記録を置き換えますか？`)) return;
-      if (persist(imported, expected)) setMessage(`${imported.length}件の記録を読み込みました。`);
-    } catch { setMessage("バックアップを読み込めませんでした。形式またはサイズを確認してください。既存データは変更していません。"); }
-  }
   const filtered = records.filter(r => (!year || r.watchedMonth?.startsWith(`${year}-`)) && (!month || r.watchedMonth === month) && (!rating || r.rating === rating) && (!status || r.status === status) &&
     (!genres.length || (allGenres ? genres.every(g => r.tags.includes(g)) : genres.some(g => r.tags.includes(g)))) &&
     `${r.title} ${r.review} ${r.tags.join(" ")}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()))
     .sort((a, b) => view === "tier" ? 0 : sort === "rating" ? personalRatings.indexOf(a.rating) - personalRatings.indexOf(b.rating) : sort === "title" ? a.title.localeCompare(b.title, "ja") : sort === "watched" ? (b.watchedMonth ?? "").localeCompare(a.watchedMonth ?? "") : b.updatedAt.localeCompare(a.updatedAt));
   return <main className="app-page"><div className="page-shell space-y-7">
     <header className="flex flex-wrap items-center justify-between gap-5 border-b border-zinc-200 pb-6">
-      <div className="flex items-center gap-3"><Image src="/icons/icon-192.png" width={44} height={44} alt="" /><div><h1 className="text-2xl font-semibold">Anime Record</h1><p className="text-sm text-zinc-500">わたしのアニメ記録</p></div></div>
-      <button className="button-primary button-large" disabled={disabled || Boolean(draft)} onClick={() => openEditor("new")}><Plus size={22} aria-hidden="true" />アニメを記録</button>
+      <div className="flex items-center gap-3"><Image src="/icons/icon-192.png" width={44} height={44} alt="" /><h1 className="text-2xl font-semibold">Anime Record</h1></div>
+      <button className="button-primary button-large" disabled={disabled || Boolean(draft)} onClick={() => openEditor("new")}><Plus size={22} aria-hidden="true" />視聴したアニメを追加</button>
     </header>
-    <div className="flex flex-wrap items-center justify-between gap-3"><p className="text-sm text-zinc-600">{records.length}作品 · 視聴済み {records.filter(r => r.status === "COMPLETED").length} · SS・S {records.filter(r => r.rating === "SS" || r.rating === "S").length}</p><div className="flex gap-2"><button className="button-secondary" disabled={disabled} onClick={exportBackup}><Download size={18} aria-hidden="true" />書き出し</button><button className="button-secondary" disabled={disabled} onClick={() => fileInput.current?.click()}><Upload size={18} aria-hidden="true" />読み込み</button><input ref={fileInput} hidden type="file" accept="application/json,.json" aria-label="バックアップファイル" onChange={e => { void importBackup(e.target.files?.[0]); e.target.value = ""; }} /></div></div>
-    <p className="text-xs text-zinc-500">保存先：このブラウザ内。端末変更・ブラウザデータ削除の前にバックアップを書き出してください。</p>
+    <p className="text-sm text-zinc-600">{records.length}作品 · 視聴済み {records.filter(r => r.status === "COMPLETED").length} · SS・S {records.filter(r => r.rating === "SS" || r.rating === "S").length}</p>
+    <p className="text-xs text-zinc-500">保存先：このブラウザ内。ブラウザデータを削除すると記録も消えます。端末間の自動同期はありません。</p>
     {invalid ? <p className="form-error" role="alert">保存データを読み出せません。上書きを防ぐため編集を停止しています。ブラウザのデータを削除せず、保存設定を確認してください。</p> : null}
     {message ? <p role="status" className="personal-feedback">{message}</p> : null}
     <section className="space-y-4 border-y border-zinc-200 py-5" aria-label="記録を絞り込む">

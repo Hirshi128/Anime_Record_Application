@@ -14,6 +14,13 @@ social priorities below are historical, not instructions to deploy or extend the
 Local records are per browser and origin, not cloud-synced. Do not imply complete
 offline startup support until the app shell has been implemented and tested.
 
+Latest user preference: remove the home subtitle, label the primary add command
+as 視聴したアニメを追加, and remove file export/import UI. Normal saves still
+persist across reloads/restarts without any manual file operation. Do not restore
+those file controls unless requested. Browser data deletion loses records and no
+cross-device transfer/sync is provided; preserve the visible storage warning.
+The backup/restore priorities elsewhere in this document are historical.
+
 The user's detailed workflow is title + watched year/month + optional comment,
 then grade by placing the draft into a seven-grade tier board. Within each grade,
 left-to-right order is meaningful and persisted in the backup record array. Year

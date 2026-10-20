@@ -17,13 +17,16 @@ async function dragToGrade(page: Page, title: string, grade: string) {
   await expect(page.getByRole("region", { name: `${grade}ティア`, exact: true }).getByRole("heading", { name: title, exact: true })).toBeVisible();
 }
 
-test("personal record CRUD, seven grades, persistence and backup without login", async ({ page }, info) => {
+test("personal record CRUD and persistence without login or manual file operations", async ({ page }, info) => {
   const posts: string[] = [];
   page.on("request", r => { if (r.method() === "POST") posts.push(r.url()); });
   await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Anime Record" })).toBeVisible();
-  await page.getByRole("button", { name: "アニメを記録", exact: true }).click();
+  await expect(page.getByText("わたしのアニメ記録", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "書き出し", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "読み込み", exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
   const dialog = page.getByRole("dialog");
   await dialog.getByRole("combobox", { name: "タイトル" }).fill("テスト作品");
   await dialog.getByLabel("見た年月").fill("2025-06");
@@ -50,30 +53,26 @@ test("personal record CRUD, seven grades, persistence and backup without login",
   await expect(page.getByText("条件に合う記録がありません。")).toBeVisible();
   await page.getByLabel("評価で絞り込み").selectOption("SS");
   await expect(page.getByRole("heading", { name: "テスト作品" })).toBeVisible();
-  const download = page.waitForEvent("download");
-  await page.getByRole("button", { name: "書き出し" }).click();
-  const backup = await download;
-  const path = await backup.path();
-  expect(path).toBeTruthy();
   await page.screenshot({ path: info.outputPath("personal-library.png"), fullPage: true });
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  page.once("dialog", d => d.accept());
-  await page.getByRole("button", { name: "テスト作品を削除" }).click();
-  await expect(page.getByText("まだ記録がありません。")).toBeVisible();
-  page.once("dialog", d => d.accept());
-  await page.getByLabel("バックアップファイル").setInputFiles(path!);
-  await expect(page.getByRole("heading", { name: "テスト作品" })).toBeVisible();
-  expect(posts).toEqual([]);
   await page.goto("/users/account");
   await expect(page).toHaveURL(/\/library$/);
   await expect(page.getByRole("heading", { name: "テスト作品" })).toBeVisible();
+  await page.getByRole("button", { name: "一覧", exact: true }).click();
+  await expect(page.getByText("自分だけの感想")).toBeVisible();
+  page.once("dialog", d => d.accept());
+  await page.getByRole("button", { name: "テスト作品を削除" }).click();
+  await expect(page.getByText("まだ記録がありません。")).toBeVisible();
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "テスト作品" })).toHaveCount(0);
+  expect(posts).toEqual([]);
 });
 
 test("keeps corrupt browser data untouched and prevents accidental overwrite", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("anime-record.personal.v1", "broken data"));
   await page.goto("/");
   await expect(page.getByRole("main").getByRole("alert")).toContainText("上書きを防ぐ");
-  await expect(page.getByRole("button", { name: "アニメを記録", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "視聴したアニメを追加", exact: true })).toBeDisabled();
   expect(await page.evaluate(() => localStorage.getItem("anime-record.personal.v1"))).toBe("broken data");
 });
 
@@ -93,7 +92,7 @@ test("inserts a new work into the middle of a tier and reviews a selected year",
   expect(dateBounds.x - bounds.x).toBeLessThanOrEqual(12);
   expect(dateBounds.y - bounds.y).toBeLessThanOrEqual(6);
   expect(dateBounds.y + dateBounds.height).toBeLessThanOrEqual(titleBounds.y);
-  await page.getByRole("button", { name: "アニメを記録", exact: true }).click();
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
   await page.getByRole("dialog").getByRole("combobox", { name: "タイトル" }).fill("か");
   await page.getByRole("dialog").getByLabel("見た年月").fill("2025-06");
   await page.getByRole("button", { name: "ティア表で評価", exact: true }).click();
