@@ -885,3 +885,32 @@ For each meaningful run, append a dated entry with:
   started at http://127.0.0.1:3032 with both DB URLs empty; GET /anime/new followed
   its redirect to /library and returned 200 with the personal app. No application
   records were read or changed for this check. Release status is checked after push.
+
+### 2026-10-26 - Full-Screen Five-Column Tier Placement
+
+- User requested a full-screen view of a tapped tier to avoid long horizontal
+  swipes, with a new row after every five works. Added grade-label expansion and
+  blank-row tapping. Expanded grids preserve record order and show only watched
+  month/title on compact cards; five columns shrink to fit phone widths.
+- Kept dnd-kit dragging with the overlay inside the native modal's top layer.
+  Added tap insertion before any work or at the end for drafts and existing works
+  (via the placement dialog). All changes use the existing persistence/conflict
+  checks. Failed saves keep insertion open with an alert. Historical tiers remain
+  read-only. Closing restores focus to the grade button; background scrolling is
+  locked while expanded. SS/S styling and browser storage format are unchanged.
+- Changed src/app/tier-board.tsx, src/app/globals.css, tests/tier-board.test.tsx,
+  tests/browser/personal.spec.ts and the autonomous docs. Added mocked unit checks
+  for expansion, draft insertion, failed saves and read-only behavior, plus browser
+  checks for five-column wrapping, existing/new insertion and reload persistence,
+  focus return, and dragging from row two before row one's first work.
+- Initial sandbox execution failed on a temporary-file rename (EPERM); approved
+  verification outside that sandbox succeeded. Fixed a test-library type mismatch
+  and preserved the original accessible grade heading names after existing browser
+  tests detected a regression. Final npm.cmd run verify passed 288 unit tests,
+  lint, the no-DB production build and 56 browser cases across desktop, 390px and
+  320px widths; one desktop-only touch case is intentionally skipped. Inspected
+  desktop/mobile expanded screenshots. git diff --check passed.
+- Local preview: http://127.0.0.1:3033 (separate browser origin/storage from 3032).
+  No production DB access, migrations, dependencies, push or deployment. Changes
+  remain local. Next: real-device Android acceptance with a large collection;
+  browser-data deletion/no cross-device sync remain existing limitations.

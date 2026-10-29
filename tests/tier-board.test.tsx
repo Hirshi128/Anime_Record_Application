@@ -50,3 +50,43 @@ it("does not accidentally append a work when its placement is saved unchanged", 
   expect(onPlace).not.toHaveBeenCalled();
   expect(screen.queryByRole("dialog")).toBeNull();
 });
+
+const expandedRecords = Array.from({ length: 8 }, (_, i) => ({ id: `expanded-${i}`, title: `作品${i + 1}`, rating: "S" as const, review: "", tags: [], status: "COMPLETED" as const, watchedMonth: "2025-06", updatedAt: "2026-01-01T00:00:00.000Z" }));
+
+it("expands only the chosen tier and closes without changing records", () => {
+  const onPlace = vi.fn();
+  render(<TierBoard records={expandedRecords} draft={null} onPlace={onPlace} onCancel={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sティアを拡大" }));
+  const dialog = screen.getByRole("dialog", { name: "Sティア" });
+  expect(dialog.querySelectorAll(".tier-grid-cell")).toHaveLength(8);
+  expect(within(dialog).getAllByRole("time")).toHaveLength(8);
+  fireEvent.click(within(dialog).getByRole("button", { name: "拡大表示を閉じる" }));
+  expect(screen.queryByRole("dialog")).toBeNull();
+  expect(onPlace).not.toHaveBeenCalled();
+});
+
+it("inserts a pending record before a work in the expanded tier", () => {
+  const draft = { ...expandedRecords[0], id: "new", title: "追加作品" };
+  const onPlace = vi.fn();
+  render(<TierBoard records={expandedRecords} draft={draft} onPlace={onPlace} onCancel={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sティアを拡大" }));
+  fireEvent.click(screen.getByRole("button", { name: "作品6の前に配置" }));
+  expect(onPlace).toHaveBeenCalledWith(draft, "S", "expanded-5", false);
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("preserves the expanded insertion state after a failed save", () => {
+  const draft = { ...expandedRecords[0], id: "new", title: "追加作品" };
+  render(<TierBoard records={expandedRecords} draft={draft} onPlace={() => false} onCancel={vi.fn()} />);
+  fireEvent.click(screen.getByRole("button", { name: "Sティアを拡大" }));
+  fireEvent.click(screen.getByRole("button", { name: "末尾に配置" }));
+  expect(screen.getByRole("alert").textContent).toContain("保存できませんでした");
+  expect(screen.getByRole("dialog", { name: "Sティア" })).toBeTruthy();
+});
+
+it("allows a read-only tier to expand without insertion or movement controls", () => {
+  render(<TierBoard records={expandedRecords} draft={null} onPlace={vi.fn()} onCancel={vi.fn()} readOnly />);
+  fireEvent.click(screen.getByRole("button", { name: "Sティアを拡大" }));
+  expect(screen.getByRole("dialog", { name: "Sティア" })).toBeTruthy();
+  expect(screen.queryByRole("button", { name: /を移動|に配置/ })).toBeNull();
+});

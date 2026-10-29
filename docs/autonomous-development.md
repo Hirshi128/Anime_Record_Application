@@ -42,6 +42,10 @@ content height). Display the watched month in small text at the top-left and the
 title below it. Unknown dates must say they are unregistered. Do not restore grade
 selects or arrow toolbars inside each card. A separate tap-open placement dialog
 provides those accessible alternatives. Other details stay in the list/editor.
+Tapping a grade badge expands that tier into a full-screen dialog. The expanded
+grid wraps after five works; cards stay at most 140px wide and 56px high, shrinking
+in width on phones. Preserve drag placement and the tap-to-insert alternative
+for drafts/existing works, save-failure feedback, and read-only historical views.
 Keep custom rating guides, yearly/monthly insights, duplicate-title warnings,
 image-only tier export and the save-state indicator. Do not mistake PNG saving
 for a data backup or restore manual JSON file controls. Delete undo must refuse

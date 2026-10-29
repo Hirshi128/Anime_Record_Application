@@ -27,6 +27,25 @@
 .tier-handle { display: flex; width: 100%; height: 56px; min-height: 56px; align-items: center; padding: 18px 10px 4px; text-align: left; font-size: 14px; font-weight: 600; line-height: 16px; overflow: hidden; cursor: grab; touch-action: auto; user-select: none; -webkit-touch-callout: none; }
 .tier-handle:focus-visible { outline: 3px solid #0f766e; outline-offset: 2px; }
 .tier-readonly { cursor: default; }
+.tier-expand { display: flex; flex-direction: column; align-items: center; justify-content: center; width: 100%; min-height: 44px; gap: 2px; cursor: pointer; }
+.tier-row > .rating-badge:has(.tier-expand) { padding: 0; }
+.expanded-tier { width: 100%; max-width: none; height: 100dvh; max-height: 100dvh; margin: 0; border: 0; border-radius: 0; padding: 16px; }
+.expanded-tier-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; position: sticky; top: -16px; z-index: 5; padding-block: 12px; background: white; }
+.expanded-tier .tier-row { display: block; border: 0; }
+.expanded-tier .tier-row > h2 { display: none; }
+.expanded-tier .tier-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 140px)); justify-content: center; gap: 16px 12px; overflow: visible; padding: 12px; align-content: start; }
+.tier-grid-cell { position: relative; min-width: 0; }
+.tier-grid .tier-item { width: 100%; }
+.tier-insert { display: flex; align-items: center; justify-content: center; width: 100%; min-height: 44px; margin-bottom: 4px; border: 1px dashed #0f766e; border-radius: 4px; color: #0f766e; background: #f0fdfa; cursor: pointer; }
+.tier-insert-last { grid-column: 1 / -1; justify-self: center; }
+.expanded-tier-moving { position: sticky; top: 52px; z-index: 4; padding: 8px; background: #f0fdfa; border-block: 1px solid #99d5cc; }
+@media (max-width: 480px) {
+  .expanded-tier { padding: 8px; }
+  .expanded-tier-header { top: -8px; }
+  .expanded-tier .tier-grid { gap: 12px 4px; padding: 6px 2px; }
+  .tier-grid .tier-handle { padding-inline: 3px; font-size: 12px; }
+  .tier-grid .tier-watched-month { left: 3px; font-size: 8px; }
+}
 .personal-feedback { border-left: 3px solid #0f766e; background: #f0fdfa; padding: 12px; font-size: 14px; }
 .rating-badge.rating-E { color: #52525b; background: #f4f4f5; border: 1px solid #d4d4d8; }
 .review-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; padding: 16px 0; border-block: 1px solid #dfe3e6; }

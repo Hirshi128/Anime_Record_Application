@@ -1,6 +1,64 @@
 import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 
+test("expanded tiers wrap after five works and persist tap insertion", async ({ page }, info) => {
+  const records = Array.from({ length: 8 }, (_, i) => ({ id: `grid-${i}`, title: `拡大作品${i + 1}`, rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2026-01-01T00:00:00.000Z" }));
+  await page.addInitScript(records => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })); }, records);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  const expanded = page.getByRole("dialog", { name: "Sティア", exact: true });
+  await expect(expanded).toBeVisible();
+  const cells = expanded.locator(".tier-grid-cell");
+  await expect(cells).toHaveCount(8);
+  const rects = await cells.evaluateAll(nodes => nodes.map(node => { const r = node.getBoundingClientRect(); return { top: r.top, left: r.left, right: r.right }; }));
+  expect(rects[0].top).toBe(rects[4].top);
+  expect(rects[5].top).toBeGreaterThan(rects[4].top);
+  expect(rects[4].right).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.screenshot({ path: info.outputPath("expanded-tier.png") });
+  await expanded.getByRole("button", { name: "拡大作品8を移動", exact: true }).click();
+  await page.getByRole("dialog", { name: "拡大作品8の配置", exact: true }).getByRole("button", { name: "ティアを広げて配置" }).click();
+  await expanded.getByRole("button", { name: "拡大作品3の前に配置", exact: true }).click();
+  await expect(expanded).not.toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  await expect(expanded.locator(".tier-grid-cell h3")).toHaveText(["拡大作品1", "拡大作品2", "拡大作品8", "拡大作品3", "拡大作品4", "拡大作品5", "拡大作品6", "拡大作品7"]);
+  await expanded.getByRole("button", { name: "拡大表示を閉じる" }).click();
+  await expect(page.getByRole("button", { name: "Sティアを拡大", exact: true })).toBeFocused();
+  await page.route("**/api/anime-title-suggestions?*", r => r.fulfill({ json: { suggestions: [] } }));
+  await page.getByRole("button", { name: "視聴したアニメを追加", exact: true }).click();
+  const form = page.getByRole("dialog");
+  await form.getByRole("combobox", { name: "タイトル" }).fill("追加の作品");
+  await form.getByLabel("見た年月").fill("2025-07");
+  await form.getByRole("button", { name: "ティア表で評価", exact: true }).click();
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  await expanded.getByRole("button", { name: "拡大作品5の前に配置", exact: true }).click();
+  await expect(expanded).not.toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  await expect(expanded.locator(".tier-grid-cell h3")).toHaveText(["拡大作品1", "拡大作品2", "拡大作品8", "拡大作品3", "拡大作品4", "追加の作品", "拡大作品5", "拡大作品6", "拡大作品7"]);
+});
+
+test("drags a work from the second expanded row before the first work", async ({ page }) => {
+  const records = Array.from({ length: 8 }, (_, i) => ({ id: `wrap-${i}`, title: `折返作品${i + 1}`, rating: "S", status: "COMPLETED", watchedMonth: "2025-06", review: "", tags: [], updatedAt: "2026-01-01T00:00:00.000Z" }));
+  await page.addInitScript(records => { if (!localStorage.getItem("anime-record.personal.v1")) localStorage.setItem("anime-record.personal.v1", JSON.stringify({ version: 1, records })); }, records);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Sティア", exact: true });
+  const start = (await dialog.getByRole("button", { name: "折返作品8を移動", exact: true }).boundingBox())!;
+  const end = (await dialog.getByRole("button", { name: "折返作品1を移動", exact: true }).boundingBox())!;
+  await page.mouse.move(start.x + start.width / 2, start.y + start.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(start.x + start.width / 2 + 8, start.y + start.height / 2, { steps: 3 });
+  await expect(dialog.locator(".tier-drag-preview")).toBeVisible();
+  await page.mouse.move(end.x + end.width / 2, end.y + end.height / 2, { steps: 12 });
+  await expect(dialog.locator('[data-drop-side="before"]')).toBeVisible();
+  await page.mouse.up();
+  await expect(dialog).not.toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Sティアを拡大", exact: true }).click();
+  await expect(dialog.locator(".tier-grid-cell h3").first()).toHaveText("折返作品8");
+});
+
 async function dragToGrade(page: Page, title: string, grade: string) {
   const source = page.getByRole("button", { name: `${title}を移動`, exact: true });
   const target = page.getByRole("region", { name: `${grade}ティア`, exact: true }).locator(".tier-content");
